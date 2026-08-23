@@ -276,11 +276,30 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         conversation, error = _conversation_or_404(conversation_id)
         if error:
             return error
-        text = str(_body().get("text") or "").strip()
+        body = _body()
+        text = str(body.get("text") or "").strip()
         if not text:
             return jsonify({"error": "`text` must not be empty."}), 400
+        workspace = Path(conversation.workspace).resolve()
+        attachments: list[dict[str, str]] = []
+        supplied_attachments = body.get("attachments")
+        if supplied_attachments is not None and not isinstance(supplied_attachments, list):
+            return jsonify({"error": "`attachments` must be a list."}), 400
+        for item in supplied_attachments or []:
+            if not isinstance(item, dict) or not isinstance(item.get("path"), str):
+                return jsonify({"error": "Each attachment needs a file path."}), 400
+            candidate = (workspace / item["path"]).resolve()
+            if candidate == workspace or workspace not in candidate.parents or not candidate.is_file():
+                return jsonify({"error": "An attachment is not a workspace file."}), 400
+            attachments.append(
+                {
+                    "path": str(candidate.relative_to(workspace)),
+                    "name": str(item.get("name") or candidate.name),
+                    "type": str(item.get("type") or "application/octet-stream"),
+                }
+            )
         try:
-            rt().start_run(conversation, text)
+            rt().start_run(conversation, text, attachments)
         except RunInProgress as busy:
             return jsonify({"error": str(busy)}), 409
         return jsonify({"started": True}), 202

@@ -250,12 +250,34 @@ button { cursor: pointer; }
 .msg { max-width: 780px; width: 100%; margin: 0 auto; }
 
 .msg.user {
-  align-self: center;
+  align-self: flex-end;
+  width: fit-content;
+  max-width: min(780px, 100%);
+  margin: 0;
   background: var(--user-bubble);
   border-radius: var(--radius-lg);
   padding: 11px 15px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.user-message {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+}
+.user-image-attachment {
+  display: block;
+  width: min(320px, 100%);
+  max-height: 320px;
+  border-radius: 24px;
+  background: var(--bg-sunken);
+  object-fit: contain;
 }
 
 .msg.assistant { overflow-wrap: anywhere; }

@@ -255,6 +255,28 @@ function userBubble(text) {
   return div;
 }
 
+function userTextForDisplay(text) {
+  return String(text)
+    .replace(/^Attached workspace files:\n(?:- .+\n?)+\n*/, "")
+    .trim() || "Attached file";
+}
+
+function userMessage(text, attachments = []) {
+  const message = document.createElement("div");
+  message.className = "user-message";
+  for (const attachment of attachments) {
+    if (!String(attachment.type || "").startsWith("image/")) continue;
+    const image = document.createElement("img");
+    image.className = "user-image-attachment";
+    image.src = fileUrl(attachment.path);
+    image.alt = attachment.name || attachment.path;
+    image.loading = "lazy";
+    message.appendChild(image);
+  }
+  message.appendChild(userBubble(userTextForDisplay(text)));
+  return message;
+}
+
 function assistantBubble(text = "") {
   const div = document.createElement("div");
   div.className = "msg assistant";
@@ -605,7 +627,7 @@ function renderEntries(entries) {
 
     if (item.role === "user") {
       group = null;
-      el.messages.appendChild(userBubble(textFromContent(item.content)));
+      el.messages.appendChild(userMessage(textFromContent(item.content), meta.attachments || []));
       continue;
     }
     if (item.type === "message" || item.role === "assistant") {
@@ -1290,7 +1312,8 @@ async function sendMessage() {
     return;
   }
 
-  const attachmentPaths = state.attachments.map((attachment) => attachment.path);
+  const attachments = [...state.attachments];
+  const attachmentPaths = attachments.map((attachment) => attachment.path);
   const attachmentNote = attachmentPaths.length
     ? `Attached workspace files:\n${attachmentPaths.map((path) => `- ${path}`).join("\n")}`
     : "";
@@ -1299,12 +1322,12 @@ async function sendMessage() {
   el.prompt.value = "";
   el.prompt.style.height = "auto";
   el.emptyState.hidden = true;
-  append(userBubble(message));
+  append(userMessage(text, attachments));
   resetLive();
   setBusy(true);
 
   try {
-    await post(`/api/conversations/${state.active.id}/messages`, { text: message });
+    await post(`/api/conversations/${state.active.id}/messages`, { text: message, attachments });
     clearAttachments();
   } catch (error) {
     append(errorBubble(error.message));

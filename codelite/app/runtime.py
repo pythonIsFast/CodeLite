@@ -180,7 +180,12 @@ class Runtime:
 
     # -- runs ------------------------------------------------------------------------
 
-    def start_run(self, conversation: Conversation, user_text: str) -> None:
+    def start_run(
+        self,
+        conversation: Conversation,
+        user_text: str,
+        attachments: list[dict[str, str]] | None = None,
+    ) -> None:
         state = self._state_for(conversation)
         with state.lock:
             if state.busy:
@@ -199,17 +204,23 @@ class Runtime:
             state.runner = runner
             thread = threading.Thread(
                 target=self._run_and_report,
-                args=(runner, user_text, conversation.id),
+                args=(runner, user_text, attachments, conversation.id),
                 name=f"codelite-run-{conversation.id[:8]}",
                 daemon=True,
             )
             state.thread = thread
             thread.start()
 
-    def _run_and_report(self, runner: AgentRunner, user_text: str, cid: str) -> None:
+    def _run_and_report(
+        self,
+        runner: AgentRunner,
+        user_text: str,
+        attachments: list[dict[str, str]] | None,
+        cid: str,
+    ) -> None:
         """Run a turn, then publish the plan usage the request just revealed."""
         try:
-            runner.run(user_text)
+            runner.run(user_text, attachments)
         finally:
             self.refresh_plan_usage(publish_to=cid)
 

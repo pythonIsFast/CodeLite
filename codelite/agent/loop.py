@@ -89,7 +89,7 @@ class AgentRunner:
 
     # -- entry point ---------------------------------------------------------
 
-    def run(self, user_text: str) -> None:
+    def run(self, user_text: str, attachments: list[dict[str, str]] | None = None) -> None:
         self._run_tokens_used = 0
         conversation_id = self._conversation.id
         user_item = {
@@ -102,7 +102,11 @@ class AgentRunner:
         history = self._repair_history(self._store.load_items(conversation_id))
         items = self._effective_history(history)
         items.append(user_item)
-        self._store.append_items(conversation_id, [user_item])
+        self._store.append_items(
+            conversation_id,
+            [user_item],
+            {"attachments": attachments} if attachments else None,
+        )
         self._maybe_set_title(user_text)
 
         context = ToolContext(
