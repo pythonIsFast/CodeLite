@@ -76,6 +76,21 @@ class Session:
     def list_models(self) -> list[str]:
         return self._transport.list_model_ids()
 
+    def model_capabilities(self, model: str) -> dict[str, Any]:
+        """What this model offers, as the UI needs to present it.
+
+        Empty lists when the catalog is unreachable, so a caller falls back
+        rather than offering a level the model would reject.
+        """
+        info = self._transport.resolve_model_info(model)
+        if info is None:
+            return {"efforts": [], "default_effort": "", "fast": False}
+        return {
+            "efforts": list(info.supported_reasoning_levels),
+            "default_effort": info.default_reasoning_level or "",
+            "fast": info.supports_fast,
+        }
+
     def context_window(self, model: str) -> int | None:
         """The model's context window in tokens, straight from Codex's catalog.
 

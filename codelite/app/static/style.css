@@ -716,6 +716,38 @@ button { cursor: pointer; }
   overflow: hidden;
   white-space: nowrap;
 }
+/* Shaped like a pill picker so the composer row stays one family of controls,
+   but it is a toggle: pressed means "ask for the Fast tier on every turn". */
+.pill-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 11px;
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.pill-toggle:hover { color: var(--text); }
+.pill-toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-raised));
+  color: var(--accent-strong);
+}
+/* Requested but not granted: the account has no Fast entitlement, so say so
+   rather than leaving the button looking active. */
+.pill-toggle.denied[aria-pressed="true"] {
+  border-color: var(--border);
+  background: var(--bg-raised);
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+.pill-toggle[hidden] { display: none; }
+
 .field-picker .custom-select-trigger { padding: 8px 11px; border-radius: var(--radius); }
 .field-picker .custom-select-menu { top: calc(100% + 6px); bottom: auto; left: 0; right: 0; }
 

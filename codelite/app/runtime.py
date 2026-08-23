@@ -89,6 +89,7 @@ class Runtime:
         model: str | None = None,
         mode: Mode | None = None,
         reasoning_effort: str | None = None,
+        fast_mode: bool = False,
     ) -> Conversation:
         resolved_workspace = Path(workspace).expanduser().resolve() if workspace else Path.cwd()
         if not resolved_workspace.is_dir():
@@ -102,6 +103,7 @@ class Runtime:
                 if reasoning_effort is not None
                 else self.config.default_reasoning_effort
             ),
+            fast_mode=1 if fast_mode else 0,
         )
 
     def set_mode(self, conversation: Conversation, mode: Mode) -> None:

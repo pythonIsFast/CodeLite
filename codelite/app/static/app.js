@@ -19,6 +19,7 @@ const el = {
   workspace: $("chat-workspace"),
   modelSelect: $("model-select"),
   effortSelect: $("effort-select"),
+  fastToggle: $("fast-toggle"),
   modeSelect: $("mode-select"),
   compactContext: $("compact-context"),
   composer: $("composer"),
@@ -96,6 +97,7 @@ const state = {
   meta: null,
   models: [],
   efforts: [],
+  capabilities: {},
   conversations: [],
   active: null,
   stream: null,
@@ -1218,6 +1220,15 @@ function connectStream(conversationId) {
     scrollDown();
   });
 
+  on("service_tier", (data) => {
+    // Codex does not refuse an unentitled Fast request, it just serves the
+    // default tier. Without saying so, the toggle would look like it worked.
+    renderFastToggle(true, el.modelSelect.value, data.fast);
+    if (!data.fast) {
+      toast("Fast was requested, but this account was served the default tier.");
+    }
+  });
+
   on("step", (data) => {
     // A fresh model turn: later text/tool calls belong in their own bubble/group.
     finalizeLiveText();
@@ -1497,7 +1508,8 @@ async function openConversation(conversationId) {
   el.modelSelect.value = data.model;
   renderCustomSelect(el.modeSelect);
   renderCustomSelect(el.modelSelect);
-  fillEffortSelect(el.effortSelect, data.reasoning_effort || "");
+  fillEffortSelect(el.effortSelect, data.reasoning_effort || "", data.model);
+  renderFastToggle(data.fast_mode, data.model);
 
   renderEntries(data.entries || []);
   renderConversationList();
@@ -1703,7 +1715,28 @@ function fillModes(select, selected) {
   renderCustomSelect(select);
 }
 
-const EFFORT_LABEL = { "": "Effort: auto", low: "Effort: low", medium: "Effort: medium", high: "Effort: high" };
+/**
+ * Which reasoning levels a model accepts, from the catalog.
+ *
+ * Not a constant: Sol and Terra reach "ultra", Luna stops at "max", GPT-5.5 at
+ * "xhigh". Offering a level the model rejects earns an HTTP 400, so the list
+ * follows the model. Auto has no single answer, so it gets the full set.
+ */
+function effortsFor(model) {
+  if (model && model !== "auto") {
+    const capability = state.capabilities[model];
+    if (capability && capability.efforts && capability.efforts.length) return capability.efforts;
+  }
+  return state.efforts;
+}
+
+function supportsFast(model) {
+  if (!model) return false;
+  // Auto may route to any model, and every routable one offers Fast today.
+  if (model === "auto") return Object.values(state.capabilities).some((c) => c.fast);
+  const capability = state.capabilities[model];
+  return Boolean(capability && capability.fast);
+}
 
 /**
  * Fill an effort picker. The empty value comes first and means "use the
@@ -1711,16 +1744,28 @@ const EFFORT_LABEL = { "": "Effort: auto", low: "Effort: low", medium: "Effort: 
  * while Terra and Luna default to medium, so hard-coding one here would
  * silently override the model's own tuning.
  */
-function fillEffortSelect(select, selected = "") {
+function fillEffortSelect(select, selected = "", model = "") {
+  const efforts = effortsFor(model);
   select.replaceChildren();
-  for (const value of ["", ...state.efforts]) {
+  for (const value of ["", ...efforts]) {
     const option = document.createElement("option");
     option.value = value;
-    option.textContent = EFFORT_LABEL[value] || value;
+    option.textContent = value ? `Effort: ${value}` : "Effort: auto";
     select.appendChild(option);
   }
-  select.value = state.efforts.includes(selected) ? selected : "";
+  select.value = efforts.includes(selected) ? selected : "";
   renderCustomSelect(select);
+}
+
+/** Reflect the Fast request, and whether the server honoured it. */
+function renderFastToggle(requested, model, granted = null) {
+  el.fastToggle.hidden = !supportsFast(model);
+  el.fastToggle.setAttribute("aria-pressed", String(Boolean(requested)));
+  const denied = Boolean(requested) && granted === false;
+  el.fastToggle.classList.toggle("denied", denied);
+  el.fastToggle.title = denied
+    ? "Fast was requested but this account was served the default tier"
+    : "Fast: 1.5x speed, increased usage";
 }
 
 async function loadModels() {
@@ -1728,10 +1773,12 @@ async function loadModels() {
     const data = await get("/api/models");
     state.models = ["auto", ...(data.models || []).filter((model) => model !== "auto")];
     state.efforts = data.efforts || ["low", "medium", "high"];
+    state.capabilities = data.capabilities || {};
   } catch (error) {
     toast(`Could not load models: ${error.message}`, true);
     state.models = ["auto", state.meta.default_model];
     state.efforts = ["low", "medium", "high"];
+    state.capabilities = {};
   }
   el.modelSelect.replaceChildren();
   for (const model of state.models) {
@@ -1741,8 +1788,10 @@ async function loadModels() {
     el.modelSelect.appendChild(option);
   }
   renderCustomSelect(el.modelSelect);
-  fillEffortSelect(el.effortSelect);
-  fillEffortSelect(el.newEffort);
+  const active = state.active || {};
+  fillEffortSelect(el.effortSelect, active.reasoning_effort || "", el.modelSelect.value);
+  fillEffortSelect(el.newEffort, "", el.modelSelect.value);
+  renderFastToggle(active.fast_mode, el.modelSelect.value);
 }
 
 /* -- Custom selects ------------------------------------------------------- */
@@ -1918,9 +1967,28 @@ function wireEvents() {
   });
 
   el.modelSelect.addEventListener("change", async () => {
+    const model = el.modelSelect.value;
+    // The level list and Fast availability follow the model, so they have to
+    // be rebuilt here -- a level the new model rejects would be a 400.
+    fillEffortSelect(el.effortSelect, el.effortSelect.value, model);
+    renderFastToggle(state.active && state.active.fast_mode, model);
     if (!state.active) return;
-    await patch(`/api/conversations/${state.active.id}`, { model: el.modelSelect.value })
-      .catch((error) => toast(error.message, true));
+    const body = { model };
+    if (el.effortSelect.value !== (state.active.reasoning_effort || "")) {
+      body.reasoning_effort = el.effortSelect.value;
+    }
+    const updated = await patch(`/api/conversations/${state.active.id}`, body)
+      .catch((error) => { toast(error.message, true); return null; });
+    if (updated) Object.assign(state.active, updated);
+  });
+
+  el.fastToggle.addEventListener("click", async () => {
+    const next = el.fastToggle.getAttribute("aria-pressed") !== "true";
+    renderFastToggle(next, el.modelSelect.value);
+    if (!state.active) return;
+    const updated = await patch(`/api/conversations/${state.active.id}`, { fast_mode: next })
+      .catch((error) => { toast(error.message, true); return null; });
+    if (updated) Object.assign(state.active, updated);
   });
 
   el.effortSelect.addEventListener("change", async () => {
@@ -1977,6 +2045,7 @@ function wireEvents() {
         mode: el.newMode.value,
         model: el.modelSelect.value || state.meta.default_model,
         reasoning_effort: el.newEffort.value,
+        fast_mode: el.fastToggle.getAttribute("aria-pressed") === "true",
       });
       el.newOverlay.hidden = true;
       await loadConversations();

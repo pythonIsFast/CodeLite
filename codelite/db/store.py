@@ -77,6 +77,9 @@ MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("conversations", "source_id", "TEXT NOT NULL DEFAULT ''"),
     # Empty means the model's own default reasoning level from the catalog.
     ("conversations", "reasoning_effort", "TEXT NOT NULL DEFAULT ''"),
+    # 1 requests the Fast service tier. Whether it is granted is the
+    # server's call and is not stored -- only ever read off a response.
+    ("conversations", "fast_mode", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 
@@ -102,6 +105,8 @@ class Conversation:
     compacted_item_count: int = 0
     #: Requested reasoning level, or empty for the model's catalog default.
     reasoning_effort: str = ""
+    #: Whether this conversation asks for the Fast tier on every turn.
+    fast_mode: int = 0
     #: The external session this was imported from, empty when started here.
     #: `from_row` splats every column, so a new column has to land here too.
     source_id: str = ""
@@ -118,6 +123,7 @@ class Conversation:
             "model": self.model,
             "permission_mode": self.permission_mode,
             "reasoning_effort": self.reasoning_effort,
+            "fast_mode": bool(self.fast_mode),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "context_tokens": self.context_tokens,
@@ -168,6 +174,7 @@ class Store:
         permission_mode: str,
         title: str = "",
         reasoning_effort: str = "",
+        fast_mode: int = 0,
     ) -> Conversation:
         conversation = Conversation(
             id=uuid.uuid4().hex,
@@ -178,12 +185,13 @@ class Store:
             created_at=_now(),
             updated_at=_now(),
             reasoning_effort=reasoning_effort,
+            fast_mode=fast_mode,
         )
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO conversations (id, title, workspace, model, "
-                "permission_mode, created_at, updated_at, reasoning_effort) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "permission_mode, created_at, updated_at, reasoning_effort, "
+                "fast_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     conversation.id,
                     conversation.title,
@@ -193,6 +201,7 @@ class Store:
                     conversation.created_at,
                     conversation.updated_at,
                     conversation.reasoning_effort,
+                    conversation.fast_mode,
                 ),
             )
         return conversation
@@ -277,8 +286,15 @@ class Store:
             ).fetchall()
         return [Conversation.from_row(row) for row in rows]
 
-    def update_conversation(self, conversation_id: str, **fields: str) -> None:
-        allowed = {"title", "model", "permission_mode", "workspace", "reasoning_effort"}
+    def update_conversation(self, conversation_id: str, **fields: Any) -> None:
+        allowed = {
+            "title",
+            "model",
+            "permission_mode",
+            "workspace",
+            "reasoning_effort",
+            "fast_mode",
+        }
         updates = {key: value for key, value in fields.items() if key in allowed}
         if not updates:
             return

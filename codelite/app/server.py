@@ -184,12 +184,16 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
     def models():
         try:
             session = rt().session
+            slugs = chat_models(session.list_models(), session.config.image_model)
+            # Per model, because the levels genuinely differ and the Fast tier
+            # is not offered for every model -- gpt-5.4-mini has none.
             return jsonify(
                 {
-                    "models": chat_models(
-                        session.list_models(), session.config.image_model
-                    ),
+                    "models": slugs,
                     "efforts": list(REASONING_EFFORTS),
+                    "capabilities": {
+                        slug: session.model_capabilities(slug) for slug in slugs
+                    },
                 }
             )
         except AuthError as error:
@@ -266,6 +270,7 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
                 model=body.get("model"),
                 mode=Mode.parse(body.get("mode"), rt().config.default_permission_mode),
                 reasoning_effort=body.get("reasoning_effort"),
+                fast_mode=bool(body.get("fast_mode")),
             )
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
@@ -318,6 +323,8 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         }
         if "reasoning_effort" in body:
             fields["reasoning_effort"] = normalize_effort(body.get("reasoning_effort"))
+        if "fast_mode" in body:
+            fields["fast_mode"] = 1 if body.get("fast_mode") else 0
         if fields:
             runtime.store.update_conversation(conversation_id, **fields)
 

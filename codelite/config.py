@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Sequence
 from pathlib import Path
 
 from .permission.modes import Mode
@@ -73,17 +73,34 @@ CONTEXT_WINDOWS: dict[str, int] = {
 }
 
 
-#: Reasoning levels a conversation can be set to, cheapest first. An empty
-#: string means "whatever the model's own default is", which Codex reports per
-#: model in its catalog -- see `CodexModelInfo.default_reasoning_level`.
-REASONING_EFFORTS = ("low", "medium", "high")
+#: Every reasoning level Codex has been observed to accept, cheapest first.
+#: This is a validation backstop, not the menu: which levels a given model
+#: takes comes from the catalog (`supported_reasoning_levels`) and genuinely
+#: differs -- Sol and Terra reach `ultra`, Luna stops at `max`, GPT-5.5 at
+#: `xhigh`. Offering a level the chosen model rejects earns an HTTP 400.
+REASONING_EFFORTS = ("low", "medium", "high", "xhigh", "max", "ultra")
+
+#: Requesting the Fast tier. Codex names it "Fast -- 1.5x speed, increased
+#: usage" in its catalog and validates the value, but an account without the
+#: entitlement is quietly served `default` instead of being refused. So this is
+#: a request, never a promise: what actually happened is echoed back on the
+#: response, and that echo is what the UI reports.
+FAST_SERVICE_TIER = "priority"
 
 
-def normalize_effort(value: Any) -> str:
-    """Coerce a requested reasoning level, falling back to the model default."""
-    if isinstance(value, str) and value.strip().lower() in REASONING_EFFORTS:
-        return value.strip().lower()
-    return ""
+def normalize_effort(value: Any, allowed: Sequence[str] | None = None) -> str:
+    """Coerce a requested reasoning level, falling back to the model default.
+
+    Returns "" for anything unusable, which means "send no reasoning field and
+    let the model's own catalog default apply". Pass ``allowed`` (the model's
+    own levels) whenever the model is known; without it the check can only be
+    against everything Codex has ever accepted.
+    """
+    if not isinstance(value, str):
+        return ""
+    candidate = value.strip().lower()
+    permitted = tuple(allowed) if allowed else REASONING_EFFORTS
+    return candidate if candidate in permitted else ""
 
 
 #: Catalog entries that must never appear in the chat model picker. The image

@@ -45,5 +45,15 @@ def test_normalize_effort_accepts_the_documented_levels() -> None:
 def test_normalize_effort_falls_back_to_the_model_default() -> None:
     # Everything unusable becomes "", which means "send no reasoning field and
     # let the model's own catalog default apply" -- never a guessed level.
-    for value in ["", "ultra", "minimal", None, 3, True, ["high"]]:
+    for value in ["", "minimal", "fast", None, 3, True, ["high"]]:
         assert normalize_effort(value) == ""
+
+
+def test_normalize_effort_respects_a_model_specific_list() -> None:
+    # Luna stops at "max" while Sol reaches "ultra", so the same value has to
+    # be accepted for one model and rejected for the other. Getting this wrong
+    # is an HTTP 400 at the first turn, not a graceful downgrade.
+    luna = ["low", "medium", "high", "xhigh", "max"]
+    assert normalize_effort("max", luna) == "max"
+    assert normalize_effort("ultra", luna) == ""
+    assert normalize_effort("ultra") == "ultra"

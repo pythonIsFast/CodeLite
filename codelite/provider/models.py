@@ -40,6 +40,12 @@ from .config import CODEX_REGISTRY_URL, DEFAULT_CODEX_CLIENT_VERSION
 _VERSION_CACHE_TTL_SECONDS = 60 * 60
 _VERSION_RE = re.compile(r"\b\d+\.\d+\.\d+\b")
 
+#: The only non-default service tier Codex exposes. Requesting it is not the
+#: same as getting it: the response echoes the tier that was actually used,
+#: and an account without the entitlement is served "default" without an
+#: error -- so the echo is the only honest source for what happened.
+PRIORITY_SERVICE_TIER = "priority"
+
 _cached_version: str | None = None
 _cached_version_expires_at: float = 0.0
 
@@ -107,7 +113,20 @@ class CodexModelInfo:
     #: the denominator for a usage indicator.
     max_context_window: int | None = None
     display_name: str | None = None
+    #: Reasoning levels this model accepts, cheapest first, straight from the
+    #: catalog. They differ per model -- Sol and Terra go up to `ultra` while
+    #: GPT-5.5 stops at `xhigh` -- so a single hard-coded list would offer
+    #: levels one model rejects and hide levels another supports.
+    supported_reasoning_levels: tuple[str, ...] = ()
+    #: Service tiers beyond the default. Codex offers exactly one today,
+    #: `priority`, which it presents as "Fast -- 1.5x speed, increased usage".
+    service_tiers: tuple[str, ...] = ()
     raw: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def supports_fast(self) -> bool:
+        """Whether this model offers the Fast (priority) service tier."""
+        return PRIORITY_SERVICE_TIER in self.service_tiers
 
 
 def _optional_str(value: Any) -> str | None:
@@ -123,6 +142,29 @@ def _optional_int(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return int(value) if value > 0 else None
+
+
+def _reasoning_levels(value: Any) -> tuple[str, ...]:
+    """Pull the effort names out of the catalog's list of level objects."""
+    if not isinstance(value, list):
+        return ()
+    levels = []
+    for entry in value:
+        effort = entry.get("effort") if isinstance(entry, dict) else entry
+        if isinstance(effort, str) and effort and effort not in levels:
+            levels.append(effort)
+    return tuple(levels)
+
+
+def _service_tiers(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    tiers = []
+    for entry in value:
+        tier = entry.get("id") if isinstance(entry, dict) else entry
+        if isinstance(tier, str) and tier and tier not in tiers:
+            tiers.append(tier)
+    return tuple(tiers)
 
 
 def _to_model_info(value: Any) -> CodexModelInfo | None:
@@ -142,6 +184,10 @@ def _to_model_info(value: Any) -> CodexModelInfo | None:
         context_window=_optional_int(value.get("context_window")),
         max_context_window=_optional_int(value.get("max_context_window")),
         display_name=_optional_str(value.get("display_name")),
+        supported_reasoning_levels=_reasoning_levels(
+            value.get("supported_reasoning_levels")
+        ),
+        service_tiers=_service_tiers(value.get("service_tiers")),
         raw=value,
     )
 

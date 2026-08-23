@@ -33,7 +33,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-from ..config import AppConfig, context_window_for
+from ..config import FAST_SERVICE_TIER, AppConfig, context_window_for, normalize_effort
 from ..db.store import Conversation, Store
 from ..permission.manager import PermissionDenied, PermissionManager
 from ..provider.session import Session
@@ -87,6 +87,8 @@ class AgentRunner:
             FALLBACK_MODEL if self._conversation.model == AUTO_MODEL else self._conversation.model
         )
         self._run_effort = self._conversation.reasoning_effort
+        #: The tier the server said it actually used, not the one requested.
+        self._granted_tier = ""
         self._project_context = ""
         self._local_extensions = LocalExtensionHost(
             Path(self._conversation.workspace), set(registry.names())
@@ -131,6 +133,8 @@ class AgentRunner:
             self._run_effort = decision.effort or self._run_effort
             self._record_auxiliary_usage(response.get("usage") if isinstance(response, dict) else None)
             self._publish("model_selected", decision.as_event_payload())
+        self._run_effort = self._supported_effort(self._run_effort)
+        self._granted_tier = ""
         # Discover repository instructions once before the first model turn.
         # A run may contain many tool turns, so rebuilding this bounded context
         # per turn only adds latency and token-accounting work.
@@ -207,6 +211,7 @@ class AgentRunner:
 
             self._publish("step", {"step": step})
             response = self._request_turn(items)
+            self._report_service_tier(response)
             if response is None:
                 self._publish(
                     "error",
@@ -479,6 +484,46 @@ class AgentRunner:
 
     # -- model turn ------------------------------------------------------------
 
+    def _supported_effort(self, effort: str) -> str:
+        """Drop a level the run's model does not accept.
+
+        The levels differ per model -- Sol reaches `ultra`, Luna stops at
+        `max` -- so a level carried over from another model, or chosen by Auto
+        for a different one, would earn an HTTP 400 instead of a slower turn.
+        Falling back to the model's own default is the useful failure.
+        """
+        if not effort:
+            return ""
+        try:
+            allowed = self._session.model_capabilities(self._run_model).get("efforts")
+        except Exception:  # noqa: BLE001 - a catalog hiccup must not fail a run
+            return effort
+        if not allowed:
+            return effort
+        clamped = normalize_effort(effort, allowed)
+        if not clamped:
+            logger.info("%s does not support %s reasoning", self._run_model, effort)
+        return clamped
+
+    def _report_service_tier(self, response: dict[str, Any] | None) -> None:
+        """Publish which service tier the server actually used.
+
+        Only interesting when Fast was asked for, and only once per run: the
+        answer cannot change mid-run, and repeating it every turn would just be
+        noise. A request for Fast that comes back as `default` means the
+        account is not entitled to it -- Codex does not say so out loud.
+        """
+        if not self._conversation.fast_mode or self._granted_tier:
+            return
+        tier = response.get("service_tier") if isinstance(response, dict) else None
+        if not isinstance(tier, str) or not tier:
+            return
+        self._granted_tier = tier
+        self._publish(
+            "service_tier",
+            {"requested": FAST_SERVICE_TIER, "granted": tier, "fast": tier != "default"},
+        )
+
     def _request_turn(self, items: list[dict[str, Any]]) -> dict[str, Any] | None:
         body = {
             "model": self._run_model,
@@ -498,6 +543,11 @@ class AgentRunner:
         # better answer than any level this app could invent.
         if self._run_effort:
             body["reasoning"] = {"effort": self._run_effort}
+        # Asking for Fast is not the same as getting it: an account without the
+        # entitlement is served the default tier with no error at all. The
+        # response says which tier was used, and that is what gets reported.
+        if self._conversation.fast_mode:
+            body["service_tier"] = FAST_SERVICE_TIER
         chunks = self._session.send_responses(body, stream=True)
         if isinstance(chunks, dict):  # Defensive: stream=True should never buffer.
             return chunks

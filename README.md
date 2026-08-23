@@ -100,6 +100,22 @@ python3 -m codelite.provider
 
 Choose **Auto** in the model picker and Code Lite uses a lightweight routing step before every turn. Routine work stays economical; larger refactors, debugging, and higher-risk changes can receive a more capable model. The selected model (Luna, Terra, or Sol) and reason remain visible in chat, and routing falls back to the balanced option instead of defaulting to the most expensive model.
 
+### Reasoning effort and Fast
+
+Each conversation chooses how hard the model thinks. The levels come from
+Codex's own catalog and differ per model — GPT-5.6-Sol and Terra reach `ultra`,
+Luna stops at `max`, GPT-5.5 at `xhigh` — so the picker follows the model you
+selected. Leaving it on **auto** sends no level at all and lets the model's own
+default apply, which is not one value either: Sol defaults to `low` while Terra
+and Luna default to `medium`.
+
+**Fast** requests OpenAI's priority service tier, which Codex describes as
+"1.5x speed, increased usage". Requesting it is not the same as receiving it:
+an account without the entitlement is served the normal tier with no error at
+all. Code Lite therefore reports the tier the response actually came back with
+rather than the one it asked for, and tells you when Fast was not honoured.
+`gpt-5.4-mini` offers no Fast tier and the button hides itself for it.
+
 ## Safety you control
 
 Reads are always safe. File changes and terminal commands follow the permission mode of the current conversation.
