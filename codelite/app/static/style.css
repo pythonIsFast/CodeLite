@@ -427,7 +427,9 @@ button { cursor: pointer; }
 
 .model-decision {
   max-width: min(680px, 92%);
-  margin: 8px 0 12px;
+  /* Align the card with assistant messages (which use a 780px transcript
+     column) while preserving its more compact reading width. */
+  margin: 8px 0 12px max(0px, calc((100% - 780px) / 2));
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
