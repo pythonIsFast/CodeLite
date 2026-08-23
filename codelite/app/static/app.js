@@ -392,8 +392,7 @@ function modelDecisionCard(data) {
     if (!profile) continue;
     const row = document.createElement("p");
     row.className = model === data.model ? "selected" : "";
-    const name = model === "gpt-5.6-luna" ? "Auto" : profile.name;
-    row.textContent = `${name}: ${profile.fit} ${profile.limit}`.replaceAll("Luna", "Auto");
+    row.textContent = `${profile.name}: ${profile.fit} ${profile.limit}`;
     list.appendChild(row);
   }
   card.appendChild(list);
@@ -401,7 +400,7 @@ function modelDecisionCard(data) {
 }
 
 function modelDisplayName(data) {
-  return data.model === "gpt-5.6-luna" ? "Auto" : (data.model_name || data.model);
+  return data.model_name || data.model;
 }
 
 /* -- Message footer -------------------------------------------------------- */

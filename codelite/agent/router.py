@@ -20,7 +20,7 @@ ROUTABLE_MODELS = {"gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"}
 
 MODEL_PROFILES = {
     "gpt-5.6-luna": {
-        "name": "Auto",
+        "name": "Luna",
         "fit": "Best for focused questions, routine edits, and quick checks.",
         "limit": "Not the first choice for risky, cross-cutting, or difficult debugging.",
     },
@@ -32,7 +32,7 @@ MODEL_PROFILES = {
     "gpt-5.6-sol": {
         "name": "Sol",
         "fit": "Best for complex architecture, high-risk changes, and hard investigation.",
-        "limit": "Avoid for routine work when Auto or Terra is sufficient.",
+        "limit": "Avoid for routine work when Luna or Terra is sufficient.",
     },
 }
 

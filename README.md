@@ -98,7 +98,7 @@ python3 -m codelite.provider
 
 ### Let Auto choose the right model
 
-Choose **Auto** in the model picker and Code Lite uses a lightweight routing step before every turn. Routine work stays economical; larger refactors, debugging, and higher-risk changes can receive a more capable model. The selected model and reason remain visible in chat, and routing falls back to the balanced option instead of defaulting to the most expensive model.
+Choose **Auto** in the model picker and Code Lite uses a lightweight routing step before every turn. Routine work stays economical; larger refactors, debugging, and higher-risk changes can receive a more capable model. The selected model (Luna, Terra, or Sol) and reason remain visible in chat, and routing falls back to the balanced option instead of defaulting to the most expensive model.
 
 ## Safety you control
 
