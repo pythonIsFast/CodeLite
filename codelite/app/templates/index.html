@@ -88,6 +88,11 @@
           </span>
           <span class="composer-foot-spacer"></span>
           <div class="custom-select pill-picker" data-select-picker>
+            <select id="effort-select" class="custom-select-source" title="Reasoning effort" tabindex="-1"></select>
+            <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false"></button>
+            <div class="custom-select-menu" role="listbox" hidden></div>
+          </div>
+          <div class="custom-select pill-picker" data-select-picker>
             <select id="model-select" class="custom-select-source" title="Model" tabindex="-1"></select>
             <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false"></button>
             <div class="custom-select-menu" role="listbox" hidden></div>
@@ -151,6 +156,14 @@
         <span>Permission mode</span>
         <div class="custom-select field-picker" data-select-picker>
           <select id="new-mode" class="custom-select-source" tabindex="-1"></select>
+          <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false"></button>
+          <div class="custom-select-menu" role="listbox" hidden></div>
+        </div>
+      </label>
+      <label class="field">
+        <span>Reasoning effort</span>
+        <div class="custom-select field-picker" data-select-picker>
+          <select id="new-effort" class="custom-select-source" tabindex="-1"></select>
           <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false"></button>
           <div class="custom-select-menu" role="listbox" hidden></div>
         </div>

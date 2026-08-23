@@ -75,6 +75,8 @@ MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # started here. It is what makes re-running an import a no-op instead of a
     # second copy of every chat.
     ("conversations", "source_id", "TEXT NOT NULL DEFAULT ''"),
+    # Empty means the model's own default reasoning level from the catalog.
+    ("conversations", "reasoning_effort", "TEXT NOT NULL DEFAULT ''"),
 )
 
 
@@ -98,6 +100,8 @@ class Conversation:
     #: A private working summary used by the agent; the full transcript stays in items.
     compaction_summary: str = ""
     compacted_item_count: int = 0
+    #: Requested reasoning level, or empty for the model's catalog default.
+    reasoning_effort: str = ""
     #: The external session this was imported from, empty when started here.
     #: `from_row` splats every column, so a new column has to land here too.
     source_id: str = ""
@@ -113,6 +117,7 @@ class Conversation:
             "workspace": self.workspace,
             "model": self.model,
             "permission_mode": self.permission_mode,
+            "reasoning_effort": self.reasoning_effort,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "context_tokens": self.context_tokens,
@@ -157,7 +162,12 @@ class Store:
     # -- conversations -------------------------------------------------------
 
     def create_conversation(
-        self, workspace: str, model: str, permission_mode: str, title: str = ""
+        self,
+        workspace: str,
+        model: str,
+        permission_mode: str,
+        title: str = "",
+        reasoning_effort: str = "",
     ) -> Conversation:
         conversation = Conversation(
             id=uuid.uuid4().hex,
@@ -167,11 +177,13 @@ class Store:
             permission_mode=permission_mode,
             created_at=_now(),
             updated_at=_now(),
+            reasoning_effort=reasoning_effort,
         )
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO conversations (id, title, workspace, model, "
-                "permission_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "permission_mode, created_at, updated_at, reasoning_effort) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     conversation.id,
                     conversation.title,
@@ -180,6 +192,7 @@ class Store:
                     conversation.permission_mode,
                     conversation.created_at,
                     conversation.updated_at,
+                    conversation.reasoning_effort,
                 ),
             )
         return conversation
@@ -265,7 +278,7 @@ class Store:
         return [Conversation.from_row(row) for row in rows]
 
     def update_conversation(self, conversation_id: str, **fields: str) -> None:
-        allowed = {"title", "model", "permission_mode", "workspace"}
+        allowed = {"title", "model", "permission_mode", "workspace", "reasoning_effort"}
         updates = {key: value for key, value in fields.items() if key in allowed}
         if not updates:
             return

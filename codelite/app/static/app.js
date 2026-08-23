@@ -18,6 +18,7 @@ const el = {
   title: $("chat-title"),
   workspace: $("chat-workspace"),
   modelSelect: $("model-select"),
+  effortSelect: $("effort-select"),
   modeSelect: $("mode-select"),
   compactContext: $("compact-context"),
   composer: $("composer"),
@@ -58,6 +59,7 @@ const el = {
   newWorkspace: $("new-workspace"),
   browseWorkspace: $("browse-workspace"),
   newMode: $("new-mode"),
+  newEffort: $("new-effort"),
   newCreate: $("new-create"),
   newCancel: $("new-cancel"),
   settingsButton: $("settings-button"),
@@ -93,6 +95,7 @@ const el = {
 const state = {
   meta: null,
   models: [],
+  efforts: [],
   conversations: [],
   active: null,
   stream: null,
@@ -323,6 +326,58 @@ const escapeHtml = (text) =>
  * A deliberately tiny Markdown subset: fenced code, inline code, bold, and
  * bullet lists. Enough for an agent's output without shipping a parser.
  */
+function inlineMarkdown(text) {
+  return escapeHtml(text)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+}
+
+/**
+ * Render one blank-line-separated block.
+ *
+ * Classified per line rather than per block: a block is often a heading with
+ * its text underneath, or a sentence followed by bullets. Deciding once for the
+ * whole block meant anything mixed fell through to a paragraph -- which is why
+ * a `## heading` used to render as literal hashes.
+ */
+function renderTextBlock(block) {
+  const out = [];
+  let list = [];
+  let paragraph = [];
+  const flushList = () => {
+    if (list.length) out.push(`<ul>${list.join("")}</ul>`);
+    list = [];
+  };
+  const flushParagraph = () => {
+    if (paragraph.length) out.push(`<p>${paragraph.join("<br />")}</p>`);
+    paragraph = [];
+  };
+
+  for (const line of block.split("\n")) {
+    const heading = /^(#{1,6})\s+(.+)$/.exec(line);
+    if (heading) {
+      flushList();
+      flushParagraph();
+      // Offset by three: the surrounding page owns h1-h3, so a message's own
+      // "#" must not compete with the app's headings.
+      const level = Math.min(6, heading[1].length + 3);
+      out.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+      continue;
+    }
+    const bullet = /^\s*[-*]\s+(.*)$/.exec(line);
+    if (bullet) {
+      flushParagraph();
+      list.push(`<li>${inlineMarkdown(bullet[1])}</li>`);
+      continue;
+    }
+    flushList();
+    paragraph.push(inlineMarkdown(line));
+  }
+  flushList();
+  flushParagraph();
+  return out.join("");
+}
+
 function formatMarkdown(text) {
   const parts = String(text).split(/```/);
   return parts
@@ -335,21 +390,7 @@ function formatMarkdown(text) {
       return part
         .split(/\n{2,}/)
         .filter((block) => block.trim())
-        .map((block) => {
-          const lines = block.split("\n");
-          const isList = lines.every((line) => /^\s*[-*]\s+/.test(line));
-          const inline = (s) =>
-            escapeHtml(s)
-              .replace(/`([^`]+)`/g, "<code>$1</code>")
-              .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-          if (isList) {
-            const items = lines
-              .map((line) => `<li>${inline(line.replace(/^\s*[-*]\s+/, ""))}</li>`)
-              .join("");
-            return `<ul>${items}</ul>`;
-          }
-          return `<p>${inline(block).replace(/\n/g, "<br />")}</p>`;
-        })
+        .map(renderTextBlock)
         .join("");
     })
     .join("");
@@ -428,7 +469,11 @@ function modelDecisionCard(data) {
   const card = document.createElement("section");
   card.className = "model-decision";
   const title = document.createElement("strong");
-  title.textContent = `Auto selected ${modelDisplayName(data)}`;
+  // The effort is part of the decision, not a detail: it changes how long
+  // every turn of the run takes, so it belongs in the headline.
+  title.textContent = data.effort
+    ? `Auto selected ${modelDisplayName(data)} at ${data.effort} effort`
+    : `Auto selected ${modelDisplayName(data)}`;
   const reason = document.createElement("p");
   reason.textContent = data.reason || "Choosing the lowest capable model.";
   card.append(title, reason);
@@ -1452,6 +1497,7 @@ async function openConversation(conversationId) {
   el.modelSelect.value = data.model;
   renderCustomSelect(el.modeSelect);
   renderCustomSelect(el.modelSelect);
+  fillEffortSelect(el.effortSelect, data.reasoning_effort || "");
 
   renderEntries(data.entries || []);
   renderConversationList();
@@ -1657,13 +1703,35 @@ function fillModes(select, selected) {
   renderCustomSelect(select);
 }
 
+const EFFORT_LABEL = { "": "Effort: auto", low: "Effort: low", medium: "Effort: medium", high: "Effort: high" };
+
+/**
+ * Fill an effort picker. The empty value comes first and means "use the
+ * model's own default", which Codex reports per model -- Sol defaults to low
+ * while Terra and Luna default to medium, so hard-coding one here would
+ * silently override the model's own tuning.
+ */
+function fillEffortSelect(select, selected = "") {
+  select.replaceChildren();
+  for (const value of ["", ...state.efforts]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = EFFORT_LABEL[value] || value;
+    select.appendChild(option);
+  }
+  select.value = state.efforts.includes(selected) ? selected : "";
+  renderCustomSelect(select);
+}
+
 async function loadModels() {
   try {
     const data = await get("/api/models");
     state.models = ["auto", ...(data.models || []).filter((model) => model !== "auto")];
+    state.efforts = data.efforts || ["low", "medium", "high"];
   } catch (error) {
     toast(`Could not load models: ${error.message}`, true);
     state.models = ["auto", state.meta.default_model];
+    state.efforts = ["low", "medium", "high"];
   }
   el.modelSelect.replaceChildren();
   for (const model of state.models) {
@@ -1673,6 +1741,8 @@ async function loadModels() {
     el.modelSelect.appendChild(option);
   }
   renderCustomSelect(el.modelSelect);
+  fillEffortSelect(el.effortSelect);
+  fillEffortSelect(el.newEffort);
 }
 
 /* -- Custom selects ------------------------------------------------------- */
@@ -1853,6 +1923,19 @@ function wireEvents() {
       .catch((error) => toast(error.message, true));
   });
 
+  el.effortSelect.addEventListener("change", async () => {
+    if (!state.active) return;
+    // Auto overrides this per run, so say so instead of letting the picker
+    // look like it was ignored.
+    if (el.modelSelect.value === "auto" && el.effortSelect.value) {
+      toast("Auto picks the effort itself; this applies if you choose a model.");
+    }
+    await patch(`/api/conversations/${state.active.id}`, {
+      reasoning_effort: el.effortSelect.value,
+    }).catch((error) => toast(error.message, true));
+    if (state.active) state.active.reasoning_effort = el.effortSelect.value;
+  });
+
   el.permOnce.addEventListener("click", () => replyPermission("once"));
   el.permSession.addEventListener("click", () => replyPermission("session"));
   el.permDeny.addEventListener("click", () => replyPermission("deny"));
@@ -1893,6 +1976,7 @@ function wireEvents() {
         workspace: el.newWorkspace.value.trim(),
         mode: el.newMode.value,
         model: el.modelSelect.value || state.meta.default_model,
+        reasoning_effort: el.newEffort.value,
       });
       el.newOverlay.hidden = true;
       await loadConversations();

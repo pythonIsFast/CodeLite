@@ -10,6 +10,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from ..config import normalize_effort
 from ..provider.chat import parse_responses_output
 from ..provider.session import Session
 
@@ -48,7 +49,15 @@ or data-sensitive changes, large cross-cutting refactors, or hard investigation
 where failure would be costly. Do not choose Sol merely because the task is a
 coding task. Prefer Luna whenever its limits clearly do not apply.
 
-Return JSON only: {"model":"gpt-5.6-luna|gpt-5.6-terra|gpt-5.6-sol", "reason":"one concise sentence for the user"}.\
+Also choose how hard the chosen model should think. Use "low" for lookups,
+small edits, and anything mechanical; "medium" for ordinary multi-step work;
+"high" only when the task needs sustained reasoning, such as a subtle bug, a
+design decision with trade-offs, or a change whose failure is expensive.
+Effort costs time and tokens on every turn of the run, so do not raise it
+because the task sounds important -- raise it only when thinking harder is
+what the task actually needs.
+
+Return JSON only: {"model":"gpt-5.6-luna|gpt-5.6-terra|gpt-5.6-sol", "effort":"low|medium|high", "reason":"one concise sentence for the user"}.\
 """
 
 
@@ -56,6 +65,8 @@ Return JSON only: {"model":"gpt-5.6-luna|gpt-5.6-terra|gpt-5.6-sol", "reason":"o
 class ModelDecision:
     model: str
     reason: str
+    #: Empty means the model's own catalog default was kept.
+    effort: str = ""
     fallback: bool = False
 
     def as_event_payload(self) -> dict[str, Any]:
@@ -64,6 +75,7 @@ class ModelDecision:
             "model": self.model,
             "model_name": MODEL_PROFILES[self.model]["name"],
             "reason": self.reason,
+            "effort": self.effort,
             "fallback": self.fallback,
             "profiles": MODEL_PROFILES,
         }
@@ -101,7 +113,11 @@ def select_model(session: Session, user_text: str) -> tuple[ModelDecision, dict[
         reason = parsed.get("reason") if parsed else None
         if model not in ROUTABLE_MODELS or not isinstance(reason, str) or not reason.strip():
             raise ValueError("Luna returned an invalid routing decision.")
-        return ModelDecision(model=model, reason=reason.strip()[:400]), response
+        # An unusable effort is not worth failing the whole routing decision
+        # over: normalize_effort returns "" and the model's catalog default
+        # applies, which is exactly what no answer should mean.
+        effort = normalize_effort(parsed.get("effort"))
+        return ModelDecision(model=model, reason=reason.strip()[:400], effort=effort), response
     except Exception as error:  # noqa: BLE001 - routing must never prevent a task
         return (
             ModelDecision(
@@ -110,6 +126,7 @@ def select_model(session: Session, user_text: str) -> tuple[ModelDecision, dict[
                     "Auto could not make a routing decision, so Code Lite chose "
                     "Terra as the balanced fallback."
                 ),
+                effort="medium",
                 fallback=True,
             ),
             {"routing_error": str(error)},

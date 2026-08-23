@@ -86,6 +86,7 @@ class AgentRunner:
         self._run_model = (
             FALLBACK_MODEL if self._conversation.model == AUTO_MODEL else self._conversation.model
         )
+        self._run_effort = self._conversation.reasoning_effort
         self._project_context = ""
         self._local_extensions = LocalExtensionHost(
             Path(self._conversation.workspace), set(registry.names())
@@ -119,10 +120,15 @@ class AgentRunner:
     def run(self, user_text: str, attachments: list[dict[str, str]] | None = None) -> None:
         self._run_tokens_used = 0
         self._run_model = self._conversation.model
+        # Whatever the user picked holds for the whole run. Auto may replace it
+        # below, because choosing the model without choosing how hard it thinks
+        # only decides half the question.
+        self._run_effort = self._conversation.reasoning_effort
         if self._run_model == AUTO_MODEL:
             self._publish("model_routing", {"router": "Auto"})
             decision, response = select_model(self._session, user_text)
             self._run_model = decision.model
+            self._run_effort = decision.effort or self._run_effort
             self._record_auxiliary_usage(response.get("usage") if isinstance(response, dict) else None)
             self._publish("model_selected", decision.as_event_payload())
         # Discover repository instructions once before the first model turn.
@@ -487,6 +493,11 @@ class AgentRunner:
                 *(tool.to_responses_tool() for tool in self._local_extensions.tools()),
             ],
         }
+        # Only sent when something actually chose a level. Omitting the key lets
+        # the transport fill in the model's own catalog default, which is a
+        # better answer than any level this app could invent.
+        if self._run_effort:
+            body["reasoning"] = {"effort": self._run_effort}
         chunks = self._session.send_responses(body, stream=True)
         if isinstance(chunks, dict):  # Defensive: stream=True should never buffer.
             return chunks

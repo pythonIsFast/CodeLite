@@ -37,7 +37,13 @@ from typing import Any
 from flask import Flask, Response, jsonify, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
-from ..config import AppConfig, context_window_for
+from ..config import (
+    REASONING_EFFORTS,
+    AppConfig,
+    chat_models,
+    context_window_for,
+    normalize_effort,
+)
 from ..importer import import_codex_sessions, preview_codex_sessions
 from ..permission.modes import Mode
 from ..provider.auth import AuthError
@@ -177,7 +183,15 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
     @app.get("/api/models")
     def models():
         try:
-            return jsonify({"models": rt().session.list_models()})
+            session = rt().session
+            return jsonify(
+                {
+                    "models": chat_models(
+                        session.list_models(), session.config.image_model
+                    ),
+                    "efforts": list(REASONING_EFFORTS),
+                }
+            )
         except AuthError as error:
             return jsonify({"error": str(error), "kind": "auth"}), 401
         except Exception as error:  # noqa: BLE001 - surfaced to the UI as-is
@@ -251,6 +265,7 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
                 workspace=body.get("workspace"),
                 model=body.get("model"),
                 mode=Mode.parse(body.get("mode"), rt().config.default_permission_mode),
+                reasoning_effort=body.get("reasoning_effort"),
             )
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
@@ -301,6 +316,8 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         fields = {
             key: str(body[key]) for key in ("title", "model") if body.get(key) is not None
         }
+        if "reasoning_effort" in body:
+            fields["reasoning_effort"] = normalize_effort(body.get("reasoning_effort"))
         if fields:
             runtime.store.update_conversation(conversation_id, **fields)
 

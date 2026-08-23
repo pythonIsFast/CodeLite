@@ -31,7 +31,7 @@ from typing import Any, Iterator
 
 from ..agent.judge import make_shell_judge
 from ..agent.loop import AgentRunner
-from ..config import AppConfig
+from ..config import AppConfig, normalize_effort
 from ..db.store import Conversation, Store
 from ..permission.manager import PermissionManager
 from ..permission.modes import Mode
@@ -88,6 +88,7 @@ class Runtime:
         workspace: str | None = None,
         model: str | None = None,
         mode: Mode | None = None,
+        reasoning_effort: str | None = None,
     ) -> Conversation:
         resolved_workspace = Path(workspace).expanduser().resolve() if workspace else Path.cwd()
         if not resolved_workspace.is_dir():
@@ -96,6 +97,11 @@ class Runtime:
             workspace=str(resolved_workspace),
             model=model or self.config.agent_model,
             permission_mode=(mode or self.config.default_permission_mode).value,
+            reasoning_effort=normalize_effort(
+                reasoning_effort
+                if reasoning_effort is not None
+                else self.config.default_reasoning_effort
+            ),
         )
 
     def set_mode(self, conversation: Conversation, mode: Mode) -> None:

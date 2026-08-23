@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from typing import Any
 from pathlib import Path
 
 from .permission.modes import Mode
@@ -72,6 +73,33 @@ CONTEXT_WINDOWS: dict[str, int] = {
 }
 
 
+#: Reasoning levels a conversation can be set to, cheapest first. An empty
+#: string means "whatever the model's own default is", which Codex reports per
+#: model in its catalog -- see `CodexModelInfo.default_reasoning_level`.
+REASONING_EFFORTS = ("low", "medium", "high")
+
+
+def normalize_effort(value: Any) -> str:
+    """Coerce a requested reasoning level, falling back to the model default."""
+    if isinstance(value, str) and value.strip().lower() in REASONING_EFFORTS:
+        return value.strip().lower()
+    return ""
+
+
+#: Catalog entries that must never appear in the chat model picker. The image
+#: model is a tool's business, not something to hold a conversation with, and
+#: the review model is an internal Codex model. `codex-auto-review` is already
+#: hidden by its catalog visibility today; it is named here so a change on
+#: OpenAI's side cannot put it back in the list.
+NON_CHAT_MODELS = frozenset({"codex-auto-review"})
+
+
+def chat_models(available: list[str], image_model: str = "") -> list[str]:
+    """The models worth offering as a conversation's model."""
+    excluded = NON_CHAT_MODELS | ({image_model} if image_model else set())
+    return [model for model in available if model not in excluded]
+
+
 def context_window_for(model: str) -> int:
     """Fallback window size. Prefer ``Session.context_window`` for live data."""
     return CONTEXT_WINDOWS.get(model, DEFAULT_CONTEXT_WINDOW)
@@ -97,6 +125,8 @@ class AppConfig:
     agent_model: str = DEFAULT_AGENT_MODEL
     judge_model: str = DEFAULT_JUDGE_MODEL
     default_permission_mode: Mode = Mode.ASK
+    #: Empty means each model's own default from Codex's catalog.
+    default_reasoning_effort: str = ""
     shell_timeout_seconds: int = SHELL_TIMEOUT_SECONDS
     max_tool_output_chars: int = MAX_TOOL_OUTPUT_CHARS
     context_stop_fraction: float = CONTEXT_STOP_FRACTION

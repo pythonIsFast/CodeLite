@@ -330,6 +330,19 @@ button { cursor: pointer; }
   color: var(--danger);
 }
 
+/* A message's own headings. They start at h4 because the app owns h1-h3, so
+   they have to be styled here rather than inherited from the page. Kept close
+   to body size: a heading inside a chat bubble is a signpost, not a banner. */
+.msg h4, .msg h5, .msg h6 {
+  margin: 16px 0 6px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.msg h4 { font-size: 15px; }
+.msg h5 { font-size: 13.5px; }
+.msg h6 { font-size: 13px; color: var(--text-dim); }
+.msg > :first-child { margin-top: 0; }
+
 .msg code {
   font-family: var(--mono);
   font-size: 12.5px;
