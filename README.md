@@ -116,6 +116,28 @@ When Code Lite asks, you can approve once, approve a narrow scope for this chat,
 > [!TIP]
 > `auto` does not silently ignore a blocked command. It shows why the safety check rejected it and lets you make the final decision.
 
+### Which mode should you use?
+
+**`auto` is the recommended default.** A second model reviews every command
+against the task you actually asked for, so a command that looks harmless on
+its own but has nothing to do with the job still gets caught. In practice this
+handles the cases that matter — accidental deletions, a stray `rm` with the
+wrong path, a command aimed outside the project — without a prompt for every
+`ls`.
+
+Choose **`ask`** if you would rather decide yourself. Every command waits for
+you, which is slower but leaves no judgement to a model. It is the right mode
+for an unfamiliar repository, for anything with credentials nearby, or simply
+if you prefer to see each step.
+
+Be aware of what the review is and is not. It is a model reading a command,
+which makes it a strong filter but a filter, not a boundary: a sufficiently
+indirect command can get past it, and there is no operating-system sandbox
+underneath. Code Lite does not currently confine commands with Landlock,
+seccomp, or a container — an approved command runs with your full user rights.
+If that matters for your work, `ask` is the mode that gives you a hard gate,
+and `bypass` means exactly what its name says.
+
 ## Project intelligence, without the bloat
 
 Code Lite loads useful project context only when it is needed and keeps every injected source bounded.
@@ -226,6 +248,7 @@ The provider layer is a from-scratch Python implementation inspired by [EvanZhou
 ## Deliberate constraints
 
 - The app binds to localhost only; it is a private desktop backend, not a network service.
+- There is no operating-system sandbox. Permission modes are the gate, and an approved command runs with your full user rights. `auto` is a good default and `ask` is the strict one, but neither is a kernel boundary — see [Which mode should you use?](#which-mode-should-you-use).
 - Shell calls are separate processes. Code Lite carries the working directory between calls, not environment mutations, functions, or background jobs.
 - Web tools reject private, local, reserved, and credential-bearing destinations. Downloads and returned text are capped.
 - Context usage is tracked per conversation. Before the model reaches its input limit, older working context is compacted while the original transcript remains stored and visible.
