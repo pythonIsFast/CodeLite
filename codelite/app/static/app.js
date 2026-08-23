@@ -571,10 +571,36 @@ function summarizeArgs(rawArguments) {
   }
 }
 
-const TOOL_GROUP_ICON =
-  `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">` +
-  `<path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h4l1.5 1.5H12.5A1.5 1.5 0 0 1 14 5v7a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12z"` +
-  ` fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>`;
+/**
+ * One glyph per category. A folder icon above a web search claims a file was
+ * touched, so every category carries its own shape rather than sharing one.
+ */
+const CATEGORY_ICON_PATHS = {
+  read: ["M4 2h5l3 3v9H4z", "M9 2v3h3"],
+  list: ["M2 3.5A1.5 1.5 0 0 1 3.5 2h4l1.5 1.5H12.5A1.5 1.5 0 0 1 14 5v7a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 12z"],
+  search: ["M7 11.5a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9z", "M10.5 10.5 14 14"],
+  write: ["M11.5 2.5 13.5 4.5 5.5 12.5 2.5 13.5 3.5 10.5z"],
+  shell: ["M2 3.5h12v9H2z", "M4.5 7 6 8.5 4.5 10", "M8 10.5h3.5"],
+  extension: ["M2.5 2.5h5v5h-5z", "M8.5 2.5h5v5h-5z", "M8.5 8.5h5v5h-5z"],
+  websearch: ["M8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12z", "M2.5 6.5h11", "M2.5 9.5h11", "M8 2c-2 2.5-2 9.5 0 12", "M8 2c2 2.5 2 9.5 0 12"],
+  webfetch: ["M8 2.5v7", "M5 7l3 3 3-3", "M3 13h10"],
+  intel: ["M6.5 2.5C5 2.5 5 5 5 6.5S3.5 8 3.5 8 5 9.5 5 11s0 2.5 1.5 2.5", "M9.5 2.5C11 2.5 11 5 11 6.5s1.5 1.5 1.5 1.5-1.5 1.5-1.5 3 0 2.5-1.5 2.5"],
+  memory: ["M4 2.5h8v11l-4-3-4 3z"],
+  image: ["M2.5 3.5h11v9h-11z", "M5.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2z", "M2.5 11 6 8l3 2.5 2.5-2 2 1.5"],
+  showcase: ["M1.5 8S4 4 8 4s6.5 4 6.5 4-2.5 4-6.5 4S1.5 8 1.5 8z", "M8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"],
+  ask: ["M8 14A6 6 0 1 0 8 2a6 6 0 0 0 0 12z", "M6.2 6.2A1.9 1.9 0 0 1 9.9 6.8c0 1.3-1.9 1.5-1.9 2.7", "M8 11.4h.01"],
+  tool: ["M4 8h.01", "M8 8h.01", "M12 8h.01"],
+};
+
+function categoryIcon(category) {
+  const paths = CATEGORY_ICON_PATHS[category] || CATEGORY_ICON_PATHS.tool;
+  return (
+    `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true" fill="none"` +
+    ` stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">` +
+    paths.map((d) => `<path d="${d}"/>`).join("") +
+    `</svg>`
+  );
+}
 
 const CHEVRON_ICON =
   `<svg class="tool-group-chevron" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">` +
@@ -583,19 +609,53 @@ const CHEVRON_ICON =
 
 const HIDDEN_TOOL_NAMES = new Set(["view_image"]);
 
-/** Categorize a tool call for the group summary line ("Read 2 files, ran 1 command…"). */
+/**
+ * Which category a tool call is summarized under.
+ *
+ * Every tool is listed explicitly. The fallback deliberately says "tool" and
+ * not "file": an unlisted tool is one nobody has classified yet, and guessing
+ * "read 1 file" for it describes work that never happened. Add new tools here
+ * when they are added to `tools/registry.py`.
+ */
+const TOOL_CATEGORY = {
+  read_file: "read",
+  list_dir: "list",
+  grep: "search",
+  find_files: "search",
+  write_file: "write",
+  edit_file: "write",
+  shell: "shell",
+  extensions: "extension",
+  web_search: "websearch",
+  web_fetch: "webfetch",
+  code_intelligence: "intel",
+  project_memory: "memory",
+  generate_image: "image",
+  view_image: "image",
+  showcase_file: "showcase",
+  ask_user: "ask",
+};
+
 function toolCategory(name) {
-  if (name === "shell") return "shell";
-  if (name === "grep" || name === "find_files") return "search";
-  if (name === "write_file" || name === "edit_file" || name === "generate_image") return "write";
-  return "read";
+  return TOOL_CATEGORY[name] || "tool";
 }
 
+/** `[verb, singular, plural]` -- rendered as "verb count noun". */
 const CATEGORY_LABEL = {
   read: ["Read", "file", "files"],
-  write: ["Edited", "file", "files"],
+  list: ["Listed", "directory", "directories"],
   search: ["Searched", "location", "locations"],
+  write: ["Edited", "file", "files"],
   shell: ["Ran", "command", "commands"],
+  extension: ["Ran", "extension", "extensions"],
+  websearch: ["Ran", "web search", "web searches"],
+  webfetch: ["Fetched", "page", "pages"],
+  intel: ["Looked up", "symbol", "symbols"],
+  memory: ["Updated", "memory note", "memory notes"],
+  image: ["Generated", "image", "images"],
+  showcase: ["Showed", "file", "files"],
+  ask: ["Asked", "question", "questions"],
+  tool: ["Ran", "tool", "tools"],
 };
 
 /** A collapsible group of one or more tool calls, rendered together like a single agent step. */
@@ -606,7 +666,9 @@ function toolGroup() {
   const head = document.createElement("button");
   head.className = "tool-group-head";
   head.type = "button";
-  head.innerHTML = `${TOOL_GROUP_ICON}<span class="tool-group-summary">Working…</span>${CHEVRON_ICON}`;
+  head.innerHTML =
+    `<span class="tool-group-icon">${categoryIcon("tool")}</span>` +
+    `<span class="tool-group-summary">Working…</span>${CHEVRON_ICON}`;
   head.addEventListener("click", () => group.classList.toggle("open"));
 
   const body = document.createElement("div");
@@ -614,6 +676,7 @@ function toolGroup() {
 
   group.append(head, body);
   group._summary = head.querySelector(".tool-group-summary");
+  group._icon = head.querySelector(".tool-group-icon");
   group._body = body;
   group._counts = new Map();
   return group;
@@ -621,11 +684,16 @@ function toolGroup() {
 
 function refreshGroupSummary(group) {
   const parts = [];
+  let leading = null;
   for (const [category, count] of group._counts) {
-    const [verb, singular, plural] = CATEGORY_LABEL[category];
+    const [verb, singular, plural] = CATEGORY_LABEL[category] || CATEGORY_LABEL.tool;
     parts.push(`${verb} ${count} ${count === 1 ? singular : plural}`);
+    // The icon shows the category the group did most of; ties keep the one
+    // that happened first, since Map preserves insertion order.
+    if (!leading || count > leading[1]) leading = [category, count];
   }
   group._summary.textContent = parts.join(", ") || "Working…";
+  group._icon.innerHTML = categoryIcon(leading ? leading[0] : "tool");
 }
 
 function toolRow(group, name, rawArguments) {

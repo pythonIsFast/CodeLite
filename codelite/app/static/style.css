@@ -372,6 +372,9 @@ button { cursor: pointer; }
 }
 .tool-group-head:hover { color: var(--text); }
 .tool-group-head svg { flex: 0 0 auto; opacity: .75; }
+/* The glyph is swapped per category, so it lives in a wrapper the summary can
+   repaint without rebuilding the whole header. */
+.tool-group-icon { display: flex; flex: 0 0 auto; }
 .tool-group-summary { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tool-group-chevron { transition: transform .12s; opacity: .6 !important; }
 .tool-group.open .tool-group-chevron { transform: rotate(90deg); }

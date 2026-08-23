@@ -1,0 +1,298 @@
+name: Build and release
+
+# Every push builds all artifacts, so a broken build shows up immediately.
+# A release is only cut when the VERSION file changed in that push, on the
+# default branch. Bumping VERSION on a feature branch therefore builds but
+# publishes nothing.
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish a release even though VERSION did not change"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  # Never cancel a run that might be halfway through publishing a release.
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Read VERSION
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      release: ${{ steps.check.outputs.release }}
+    steps:
+      # Full history: the push's "before" commit has to be resolvable to see
+      # whether VERSION moved, and the tags are needed to build the changelog.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Decide whether this push releases
+        id: check
+        env:
+          BEFORE: ${{ github.event.before }}
+          FORCED: ${{ inputs.release }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+
+          version="$(tr -d ' \t\r\n' < VERSION)"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error file=VERSION::VERSION must be x.y.z, found '$version'"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          changed=false
+          if [ "${FORCED:-false}" = "true" ]; then
+            changed=true
+            echo "Release forced from the Actions tab."
+          elif [ -z "${BEFORE:-}" ] || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+            # A brand-new branch reports an all-zero "before", and a
+            # force-push can leave a commit that no longer exists. With
+            # nothing to diff against, treat the version as new.
+            changed=true
+            echo "No comparable previous commit; treating VERSION as changed."
+          elif git diff --quiet "$BEFORE" "$GITHUB_SHA" -- VERSION; then
+            echo "VERSION is unchanged in this push."
+          else
+            changed=true
+            echo "VERSION changed in this push."
+          fi
+
+          release=false
+          if [ "$changed" = "true" ]; then
+            if [ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+              echo "Not on $DEFAULT_BRANCH -- building only."
+            elif git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+              # Re-running a workflow, or a revert that restores an old
+              # number. Publishing again would fail on the existing tag.
+              echo "::warning::Tag v$version already exists -- not releasing again."
+            else
+              release=true
+            fi
+          fi
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "Version $version, release=$release"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Code Lite ${{ steps.check.outputs.version }}"
+            echo
+            if [ "${{ steps.check.outputs.release }}" = "true" ]; then
+              echo "This push will publish a release."
+            else
+              echo "Building only -- no release from this push."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  linux:
+    name: Linux (.pyz + .deb)
+    needs: version
+    # Pinned rather than ubuntu-latest: the .deb declares dependencies by
+    # name, and a moving runner would silently change what gets tested.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build the zipapp
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          chmod +x packaging/build-pyz.sh packaging/build-deb.sh
+          packaging/build-pyz.sh "dist/code-lite-$VERSION.pyz"
+
+      - name: Smoke-test the zipapp
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          # Proves the archive is intact and every bundled import resolves.
+          # --help exits before any window or network work, so it needs no
+          # display and no credentials.
+          python3 "dist/code-lite-$VERSION.pyz" --help
+
+      - name: Build the Debian package
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: packaging/build-deb.sh "$VERSION" "dist/code-lite-$VERSION.pyz" dist
+
+      - name: Verify the Debian package
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          deb="dist/code-lite_${VERSION}_all.deb"
+          # lintian is advisory here: a packaging nit must not fail a release.
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lintian
+          lintian --no-tag-display-limit "$deb" || true
+          dpkg-deb --info "$deb"
+          dpkg-deb --contents "$deb"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: dist/*
+          if-no-files-found: error
+
+  windows:
+    name: Windows (.exe + installer)
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Build the standalone executable
+        shell: pwsh
+        run: |
+          # --windowed: this is a GUI app, so no console window flashes up.
+          # The asset folders are added under their package path because
+          # server.py resolves them relative to the bundle root.
+          # --collect-all webview pulls in the WebView2/WinForms backend and
+          # its pythonnet glue, which PyInstaller does not find on its own.
+          pyinstaller --noconfirm --onefile --windowed `
+            --name CodeLite `
+            --icon assets/icon.ico `
+            --add-data "codelite/app/templates;codelite/app/templates" `
+            --add-data "codelite/app/static;codelite/app/static" `
+            --collect-all webview `
+            --collect-all clr_loader `
+            run.py
+
+      - name: Smoke-test the executable
+        shell: pwsh
+        run: |
+          # A --windowed build has no stdout to inspect, so this only asserts
+          # that the binary starts and exits cleanly -- which is still enough
+          # to catch a missing import, the usual PyInstaller failure.
+          $p = Start-Process -FilePath dist/CodeLite.exe -ArgumentList "--help" -PassThru -Wait
+          if ($p.ExitCode -ne 0) {
+            throw "CodeLite.exe --help exited with $($p.ExitCode)"
+          }
+
+      - name: Build the installer
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          choco install innosetup --no-progress -y
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            "/DAppVersion=$env:VERSION" packaging/windows/codelite.iss
+
+      - name: Name the portable build
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: Move-Item dist/CodeLite.exe "dist/CodeLite-$env:VERSION-windows-portable.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/*.exe
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [version, linux, windows]
+    if: needs.version.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Collect artifacts and checksums
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find artifacts -type f -exec mv -t dist {} +
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          ls -lh
+
+      - name: Write release notes
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          previous="$(git tag --list 'v*' --sort=-v:refname | head -n1)"
+          {
+            echo "## Code Lite $VERSION"
+            echo
+            echo "A lightweight coding agent that runs on your ChatGPT"
+            echo "subscription and opens in a native window."
+            echo
+            echo "### Downloads"
+            echo
+            echo "| Platform | File | Notes |"
+            echo "|---|---|---|"
+            echo "| Windows | \`CodeLite-$VERSION-windows-setup.exe\` | Installer, no admin rights needed |"
+            echo "| Windows | \`CodeLite-$VERSION-windows-portable.exe\` | Single file, nothing to install |"
+            echo "| Debian / Ubuntu | \`code-lite_${VERSION}_all.deb\` | \`sudo apt install ./code-lite_${VERSION}_all.deb\` |"
+            echo "| Linux | \`code-lite-$VERSION.pyz\` | Single file, run with \`python3 code-lite-$VERSION.pyz\` |"
+            echo
+            echo "The Linux builds use your system's Python and WebKitGTK, which"
+            echo "is what keeps them a few megabytes instead of a few hundred."
+            echo "If the window does not open, install the engine:"
+            echo
+            echo '```bash'
+            echo "sudo apt install python3-gi gir1.2-webkit2gtk-4.1"
+            echo '```'
+            echo
+            echo "> Windows builds are not code-signed, so SmartScreen may warn"
+            echo "> on first run. Verify the download against \`SHA256SUMS.txt\`."
+            echo
+            echo "### Changes"
+            echo
+            if [ -n "$previous" ]; then
+              git log --no-merges --pretty='- %s' "$previous..HEAD"
+            else
+              git log --no-merges --pretty='- %s' -20
+            fi
+            echo
+            if [ -n "$previous" ]; then
+              echo "**Full changelog:** https://github.com/${GITHUB_REPOSITORY}/compare/$previous...v$VERSION"
+            fi
+          } > notes.md
+          cat notes.md
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release create "v$VERSION" \
+            --title "Code Lite $VERSION" \
+            --notes-file notes.md \
+            --target "$GITHUB_SHA" \
+            dist/*

@@ -27,8 +27,10 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 import tempfile
 import uuid
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -71,8 +73,60 @@ def _context_window(runtime: Runtime, model: str) -> int:
     return live or context_window_for(model)
 
 
+_asset_root_cache: Path | None = None
+
+
+def _unpack_zipapp_assets() -> Path:
+    """Extract the interface files from a zipapp into a temporary directory.
+
+    Inside a ``.pyz`` nothing is a real file, and neither Jinja's loader nor
+    ``send_from_directory`` can read from a zip -- so the two asset folders are
+    unpacked once per process. The directory is deliberately left behind for
+    the OS to reap: deleting it would have to outlive every request.
+    """
+    module = Path(__file__).resolve()
+    # In a zipapp `__file__` looks like /path/app.pyz/codelite/app/server.py,
+    # so the first parent that is an actual file is the archive itself.
+    archive = next((parent for parent in module.parents if parent.is_file()), None)
+    if archive is None or not zipfile.is_zipfile(archive):
+        raise RuntimeError(
+            "Code Lite could not locate its interface files. This build looks "
+            "incomplete -- please reinstall it."
+        )
+    target = Path(tempfile.mkdtemp(prefix="codelite-assets-"))
+    prefixes = ("codelite/app/templates/", "codelite/app/static/")
+    with zipfile.ZipFile(archive) as bundle:
+        bundle.extractall(target, [n for n in bundle.namelist() if n.startswith(prefixes)])
+    return target / "codelite" / "app"
+
+
+def _asset_root() -> Path:
+    """Where ``templates/`` and ``static/`` actually live at runtime.
+
+    Three shapes have to work: a plain checkout, a PyInstaller build (assets
+    sit under the bootloader's extraction dir) and a zipapp (see above).
+    Flask's own guess is right only for the first, so it is stated explicitly.
+    """
+    global _asset_root_cache
+    if _asset_root_cache is not None:
+        return _asset_root_cache
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle:
+        root = Path(bundle) / "codelite" / "app"
+    else:
+        here = Path(__file__).resolve().parent
+        root = here if (here / "templates").is_dir() else _unpack_zipapp_assets()
+    _asset_root_cache = root
+    return root
+
+
 def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) -> Flask:
-    app = Flask(__name__)
+    assets = _asset_root()
+    app = Flask(
+        __name__,
+        template_folder=str(assets / "templates"),
+        static_folder=str(assets / "static"),
+    )
     app.config["runtime"] = runtime or Runtime(config)
     app.config["login_manager"] = ChatGPTLoginManager(
         app.config["runtime"].session.config

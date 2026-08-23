@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Code Lite
+GenericName=Coding Agent
+Comment=A lightweight coding agent that runs on your ChatGPT subscription
+Exec=code-lite
+Icon=code-lite
+Terminal=false
+Categories=Development;IDE;
+Keywords=code;agent;ai;chatgpt;codex;
+StartupWMClass=Code Lite

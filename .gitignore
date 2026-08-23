@@ -8,3 +8,7 @@ auth.json
 *.db-wal
 *.db-shm
 venv/
+
+# Build output from packaging/ and the release workflow
+dist/
+build/

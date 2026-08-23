@@ -1,0 +1,16 @@
+#!/bin/sh
+# Launcher installed as /usr/bin/code-lite by the Debian package.
+#
+# The app itself is a zipapp: one file, pure Python, run by the system's own
+# interpreter. That is what keeps the package a couple of megabytes instead of
+# shipping a second Python and a second browser engine.
+set -eu
+
+APP=/opt/code-lite/code-lite.pyz
+
+if [ ! -f "$APP" ]; then
+    echo "code-lite: $APP is missing -- try reinstalling the package." >&2
+    exit 1
+fi
+
+exec python3 "$APP" "$@"
