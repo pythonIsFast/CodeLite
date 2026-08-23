@@ -16,6 +16,7 @@ only inserted into a conversation after the model explicitly asks for one.
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +30,29 @@ LSP_CONFIG_PATH = Path(PROJECT_DIR) / "lsp.json"
 MAX_MEMORY_CHARS = 2_500
 MAX_SKILL_INDEX_CHARS = 1_500
 MAX_SKILL_BODY_CHARS = 20_000
+MAX_INSTRUCTION_FILES = 24
+MAX_INSTRUCTION_FILE_CHARS = 4_000
+MAX_INSTRUCTION_CHARS = 12_000
+
+# Do not waste startup time walking generated dependencies or build outputs just
+# to find a repository instruction file. This also keeps a checked-out
+# dependency from unexpectedly contributing instructions to its parent project.
+IGNORED_INSTRUCTION_DIRS = {
+    ".cache",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".next",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".svn",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+}
 
 
 @dataclass(frozen=True)
@@ -134,10 +158,63 @@ def _configured_mcp_names(workspace: Path) -> list[str]:
     )
 
 
+def _repository_instruction_files(workspace: Path) -> list[Path]:
+    """Find repository-local AGENTS.md and CLAUDE.md files cheaply and safely."""
+    root = Path(workspace).resolve()
+    if not root.is_dir():
+        return []
+    files: list[Path] = []
+    for directory, directories, names in os.walk(root, followlinks=False):
+        directories[:] = [
+            name for name in directories if name not in IGNORED_INSTRUCTION_DIRS
+        ]
+        for name in names:
+            if name not in {"AGENTS.md", "CLAUDE.md"}:
+                continue
+            path = (Path(directory) / name).resolve()
+            if root not in path.parents or not path.is_file():
+                continue
+            files.append(path)
+            if len(files) >= MAX_INSTRUCTION_FILES:
+                break
+        if len(files) >= MAX_INSTRUCTION_FILES:
+            break
+    return sorted(files, key=lambda path: (len(path.relative_to(root).parts), str(path)))
+
+
+def _repository_instructions(workspace: Path) -> str:
+    root = Path(workspace).resolve()
+    remaining = MAX_INSTRUCTION_CHARS
+    documents: list[str] = []
+    for path in _repository_instruction_files(root):
+        if remaining <= 0:
+            break
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeDecodeError):
+            continue
+        if not text:
+            continue
+        clipped = text[: min(MAX_INSTRUCTION_FILE_CHARS, remaining)]
+        if len(clipped) < len(text):
+            clipped += "\n[Instruction file truncated.]"
+        documents.append(f"--- {path.relative_to(root)} ---\n{clipped}")
+        remaining -= len(clipped)
+    if not documents:
+        return ""
+    return (
+        "Repository instructions (loaded before this run; follow the applicable "
+        "instructions before starting work):\n" + "\n\n".join(documents)
+    )
+
+
 def build_project_context(workspace: Path, data_dir: Path) -> str:
     """Build a tightly bounded prompt fragment for one workspace."""
     sections: list[str] = []
     root = Path(workspace).resolve()
+    instructions = _repository_instructions(root)
+    if instructions:
+        sections.append(instructions)
     memory_path = (root / MEMORY_PATH).resolve()
     if root not in memory_path.parents:
         memory = ""

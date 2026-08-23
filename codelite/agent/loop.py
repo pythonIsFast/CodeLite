@@ -78,6 +78,7 @@ class AgentRunner:
         self._config = config
         self._cancelled = threading.Event()
         self._run_tokens_used = 0
+        self._project_context = ""
 
     def cancel(self) -> None:
         """Ask the run to stop, and release anything blocked on a permission prompt."""
@@ -92,6 +93,12 @@ class AgentRunner:
 
     def run(self, user_text: str, attachments: list[dict[str, str]] | None = None) -> None:
         self._run_tokens_used = 0
+        # Discover repository instructions once before the first model turn.
+        # A run may contain many tool turns, so rebuilding this bounded context
+        # per turn only adds latency and token-accounting work.
+        self._project_context = build_project_context(
+            Path(self._conversation.workspace), self._config.data_dir
+        )
         conversation_id = self._conversation.id
         user_item = {
             "role": "user",
@@ -414,9 +421,7 @@ class AgentRunner:
             "instructions": system_prompt.build(
                 self._permissions.mode,
                 self._conversation.workspace,
-                build_project_context(
-                    Path(self._conversation.workspace), self._config.data_dir
-                ),
+                self._project_context,
             ),
             "input": items,
             "tools": registry.to_responses_tools(),

@@ -113,6 +113,10 @@ almost nothing to startup time, install size, or token usage:
 - **Project memory** lives in `.codelite/memory.md`, is limited to 2,500
   characters, and is shared by every chat in that workspace. It is intended
   for stable commands, conventions, and architecture decisions.
+- **Repository instructions** are automatically collected from `AGENTS.md` and
+  `CLAUDE.md` before each run, including applicable nested folders. Generated
+  directories such as `node_modules` are skipped, and the combined text is
+  bounded to protect startup time and token usage.
 - **Skills** are Markdown files at `.codelite/skills/*.md` or
   `.codelite/skills/<name>/SKILL.md`. User-wide skills can use the same layout
   under the Code Lite data directory's `skills/` folder. Only names and short
@@ -173,9 +177,9 @@ existing command permission policy.
   Code Lite replaces older working context with a self-contained summary and
   keeps the newest exchanges intact. The full original transcript remains
   visible and stored locally.
-- **Lazy project intelligence** — bounded project memory, on-demand skills,
-  optional MCP stdio tools, and persistent language-server intelligence without
-  adding Python dependencies.
+- **Lazy project intelligence** — bounded repository instructions and project
+  memory, on-demand skills, optional MCP stdio tools, and persistent
+  language-server intelligence without adding Python dependencies.
 - **Plan usage** — how much of your weekly ChatGPT allowance is gone, read
   from the `x-codex-*` response headers Codex attaches to every `/responses`
   call. There is no endpoint for this, so the figure only refreshes when a

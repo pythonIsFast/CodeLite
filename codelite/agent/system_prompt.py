@@ -47,6 +47,9 @@ contents; it supplies the actual image to your next model turn.
 and symbols when a language server is available. Use `extensions` lazily for \
 skills and MCP integrations. Save only stable, reusable facts with \
 `project_memory`; keep it concise to protect context and usage limits.
+- Repository instructions from `AGENTS.md` and `CLAUDE.md`, when present below, \
+are already loaded before your first turn. Follow the instructions applicable to \
+the files you touch before starting work.
 - Each `shell` call is a fresh process, but the working directory carries over: \
 `cd build` affects your later shell calls. The tool result tells you when the \
 directory moved.

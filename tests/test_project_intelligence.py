@@ -53,6 +53,32 @@ class ProjectIntelligenceTests(unittest.TestCase):
             self.assertEqual(discover_skills(workspace, data_dir)[0].name, "review")
             self.assertIn("Read the diff", read_skill(workspace, data_dir, "review"))
 
+    def test_repository_instructions_are_loaded_and_dependencies_ignored(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            workspace = Path(root) / "workspace"
+            workspace.mkdir()
+            workspace.joinpath("AGENTS.md").write_text(
+                "# Root instructions\nUse the project formatter.", encoding="utf-8"
+            )
+            nested = workspace / "src"
+            nested.mkdir()
+            nested.joinpath("CLAUDE.md").write_text(
+                "# Source instructions\nKeep imports sorted.", encoding="utf-8"
+            )
+            ignored = workspace / "node_modules"
+            ignored.mkdir()
+            ignored.joinpath("AGENTS.md").write_text(
+                "This must not be loaded.", encoding="utf-8"
+            )
+
+            prompt = build_project_context(workspace, Path(root) / "data")
+
+            self.assertIn("AGENTS.md", prompt)
+            self.assertIn("Use the project formatter.", prompt)
+            self.assertIn("src/CLAUDE.md", prompt)
+            self.assertIn("Keep imports sorted.", prompt)
+            self.assertNotIn("This must not be loaded.", prompt)
+
     def test_mcp_stdio_client(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             workspace = Path(root)
