@@ -528,6 +528,35 @@ button { cursor: pointer; }
   line-height: 1.55;
 }
 
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 2px 3px;
+}
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 240px;
+  padding: 3px 5px 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-sunken);
+  color: var(--text-dim);
+  font-size: 12px;
+}
+.attachment-chip > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachment-chip button {
+  border: 0;
+  background: none;
+  color: var(--text-faint);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.attachment-chip button:hover { color: var(--danger); }
+
 .composer-foot { display: flex; align-items: center; gap: 8px; }
 .composer-foot-spacer { flex: 1; }
 

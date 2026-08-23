@@ -26,10 +26,13 @@ of a desktop window, not a service.
 from __future__ import annotations
 
 import logging
+import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
 from flask import Flask, Response, jsonify, render_template, request, send_file
+from werkzeug.utils import secure_filename
 
 from ..config import AppConfig, context_window_for
 from ..permission.modes import Mode
@@ -46,6 +49,8 @@ SSE_HEADERS = {
     "Connection": "keep-alive",
     "X-Accel-Buffering": "no",
 }
+
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 
 def _context_window(runtime: Runtime, model: str) -> int:
@@ -219,6 +224,50 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
     def delete_conversation(conversation_id: str):
         rt().delete_conversation(conversation_id)
         return jsonify({"deleted": conversation_id})
+
+    @app.post("/api/conversations/<conversation_id>/uploads")
+    def upload_file(conversation_id: str):
+        """Accept a user-pasted file and save it inside that chat's workspace."""
+        conversation, error = _conversation_or_404(conversation_id)
+        if error:
+            return error
+        uploaded = request.files.get("file")
+        if uploaded is None or not uploaded.filename:
+            return jsonify({"error": "Attach one file in the `file` field."}), 400
+        filename = secure_filename(uploaded.filename) or "pasted-file"
+        workspace = Path(conversation.workspace).resolve()
+        upload_dir = workspace / "uploads"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        target = upload_dir / f"{uuid.uuid4().hex}_{filename}"
+        temporary = None
+        size = 0
+        try:
+            with tempfile.NamedTemporaryFile(dir=upload_dir, delete=False) as handle:
+                temporary = Path(handle.name)
+                while chunk := uploaded.stream.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > MAX_UPLOAD_BYTES:
+                        raise ValueError("Files must be 50 MB or smaller.")
+                    handle.write(chunk)
+            temporary.replace(target)
+        except ValueError as exc:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+            return jsonify({"error": str(exc)}), 413
+        except OSError as exc:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+            logger.warning("Could not save uploaded file", exc_info=True)
+            return jsonify({"error": f"Could not save upload: {exc}"}), 500
+
+        return jsonify(
+            {
+                "path": str(target.relative_to(workspace)),
+                "name": filename,
+                "size": size,
+                "type": uploaded.mimetype or "application/octet-stream",
+            }
+        ), 201
 
     # -- runs ----------------------------------------------------------------------
 

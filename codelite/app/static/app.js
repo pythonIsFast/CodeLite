@@ -21,6 +21,7 @@ const el = {
   modeSelect: $("mode-select"),
   composer: $("composer"),
   prompt: $("prompt"),
+  attachments: $("composer-attachments"),
   send: $("send"),
   statusBar: $("status-bar"),
   statusText: $("status-text"),
@@ -81,6 +82,8 @@ const state = {
   auth: null,
   appLoaded: false,
   authPoll: null,
+  attachments: [],
+  uploadsInProgress: 0,
 };
 
 /* -- API ------------------------------------------------------------------ */
@@ -1148,21 +1151,92 @@ function closeConversation() {
   renderEntries([]);
   setBusy(false);
   resetUsage();
+  clearAttachments();
+}
+
+function renderAttachments() {
+  el.attachments.replaceChildren();
+  el.attachments.hidden = state.attachments.length === 0;
+  for (const attachment of state.attachments) {
+    const chip = document.createElement("span");
+    chip.className = "attachment-chip";
+    const name = document.createElement("span");
+    name.textContent = attachment.name;
+    name.title = attachment.path;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "×";
+    remove.title = `Remove ${attachment.name}`;
+    remove.setAttribute("aria-label", remove.title);
+    remove.addEventListener("click", () => {
+      state.attachments = state.attachments.filter((item) => item.path !== attachment.path);
+      renderAttachments();
+    });
+    chip.append(name, remove);
+    el.attachments.appendChild(chip);
+  }
+}
+
+function clearAttachments() {
+  state.attachments = [];
+  renderAttachments();
+}
+
+async function uploadAttachment(file) {
+  if (!state.active) throw new Error("Open a conversation before pasting a file.");
+  if (file.size > 50 * 1024 * 1024) throw new Error("Files must be 50 MB or smaller.");
+  const form = new FormData();
+  form.append("file", file, file.name || "pasted-file");
+  const response = await fetch(`/api/conversations/${state.active.id}/uploads`, {
+    method: "POST",
+    body: form,
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `Upload failed (${response.status})`);
+  return data;
+}
+
+async function addPastedFiles(files) {
+  if (!files.length || !state.active || state.busy) return;
+  state.uploadsInProgress += files.length;
+  setBusy(true, "Uploading attachment…");
+  try {
+    const uploaded = await Promise.all([...files].map(uploadAttachment));
+    state.attachments.push(...uploaded);
+    renderAttachments();
+    toast(`${uploaded.length} file${uploaded.length === 1 ? "" : "s"} attached.`);
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    state.uploadsInProgress -= files.length;
+    setBusy(false);
+  }
 }
 
 async function sendMessage() {
   const text = el.prompt.value.trim();
-  if (!text || !state.active || state.busy) return;
+  if ((!text && !state.attachments.length) || !state.active || state.busy) return;
+  if (state.uploadsInProgress) {
+    toast("Wait for the attachment upload to finish.");
+    return;
+  }
+
+  const attachmentPaths = state.attachments.map((attachment) => attachment.path);
+  const attachmentNote = attachmentPaths.length
+    ? `Attached workspace files:\n${attachmentPaths.map((path) => `- ${path}`).join("\n")}`
+    : "";
+  const message = [attachmentNote, text].filter(Boolean).join("\n\n") || "Please inspect the attached file.";
 
   el.prompt.value = "";
   el.prompt.style.height = "auto";
   el.emptyState.hidden = true;
-  append(userBubble(text));
+  append(userBubble(message));
   resetLive();
   setBusy(true);
 
   try {
-    await post(`/api/conversations/${state.active.id}/messages`, { text });
+    await post(`/api/conversations/${state.active.id}/messages`, { text: message });
+    clearAttachments();
   } catch (error) {
     append(errorBubble(error.message));
     setBusy(false);
@@ -1229,6 +1303,13 @@ function wireEvents() {
   el.prompt.addEventListener("input", () => {
     el.prompt.style.height = "auto";
     el.prompt.style.height = `${Math.min(el.prompt.scrollHeight, 220)}px`;
+  });
+
+  el.prompt.addEventListener("paste", (event) => {
+    const files = event.clipboardData ? [...event.clipboardData.files] : [];
+    if (!files.length) return;
+    event.preventDefault();
+    addPastedFiles(files);
   });
 
   el.stopRun.addEventListener("click", async () => {
