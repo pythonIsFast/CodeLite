@@ -109,6 +109,7 @@ class AgentRunner:
             workspace=Path(self._conversation.workspace),
             permissions=self._permissions,
             session=self._session,
+            model=self._conversation.model,
             task_prompt=user_text,
             shell_timeout_seconds=self._config.shell_timeout_seconds,
             publish=self._publish,

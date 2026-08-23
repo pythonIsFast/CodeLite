@@ -45,6 +45,8 @@ class ToolContext:
     workspace: Path
     permissions: PermissionManager
     session: Session
+    #: The conversation's selected Codex model, used by tools that make a model call.
+    model: str = ""
     task_prompt: str = ""
     shell_timeout_seconds: int = 120
     cwd: Path | None = None

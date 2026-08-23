@@ -37,7 +37,10 @@ def _run_view_image(args: dict[str, Any], ctx: ToolContext) -> str:
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
     response = ctx.session.send_responses(
         {
-            "model": ctx.session.config.chat_model,
+            # Match the conversation's selected Codex model. The provider's
+            # `chat_model` is only a generic local-proxy default (gpt-5.2),
+            # which ChatGPT OAuth's Codex endpoint rejects.
+            "model": ctx.model or ctx.session.config.chat_model,
             "instructions": (
                 "You are the visual-inspection step of a coding agent. Describe the image "
                 "accurately and concisely, including visible text, layout, colours, and "
