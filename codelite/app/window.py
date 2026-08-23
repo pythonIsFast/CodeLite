@@ -23,6 +23,7 @@ process and only ever listens on localhost.
 
 from __future__ import annotations
 
+import base64
 import logging
 import socket
 import threading
@@ -104,6 +105,60 @@ class JsApi:
         if parsed.scheme != "https" or parsed.hostname != "auth.openai.com":
             raise ValueError("Only the ChatGPT login URL may be opened externally.")
         return webbrowser.open(url, new=1)
+
+    def read_clipboard_image(self) -> dict[str, str] | None:
+        """Read a screenshot from the native Linux clipboard as a PNG.
+
+        WebKitGTK does not consistently expose image clipboard data to
+        JavaScript's ``paste`` event. Its GTK host does, so this is a narrow
+        native fallback used only after the browser-side clipboard paths fail.
+        Other platforms simply return ``None`` and keep their normal webview
+        clipboard handling.
+        """
+        try:
+            import gi  # noqa: PLC0415 - optional native Linux integration
+
+            gi.require_version("Gtk", "3.0")
+            from gi.repository import Gdk, GLib, Gtk  # noqa: PLC0415
+
+            captured: dict[str, str] | None = None
+
+            def capture() -> None:
+                nonlocal captured
+                clipboard = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
+                pixbuf = clipboard.wait_for_image()
+                if pixbuf is None:
+                    return
+                _success, content = pixbuf.save_to_bufferv("png", [], [])
+                captured = {
+                    "name": "pasted-screenshot.png",
+                    "type": "image/png",
+                    "data": base64.b64encode(bytes(content)).decode("ascii"),
+                }
+
+            # pywebview invokes exposed Python functions off its GTK UI
+            # thread. Marshal clipboard access back to that thread and bound
+            # the wait so a broken clipboard provider cannot freeze the app.
+            if GLib.MainContext.default().is_owner():
+                capture()
+            else:
+                completed = threading.Event()
+
+                def on_idle() -> bool:
+                    try:
+                        capture()
+                    except Exception:  # noqa: BLE001 - report through the JS fallback
+                        logger.debug("Could not read the GTK clipboard", exc_info=True)
+                    finally:
+                        completed.set()
+                    return False
+
+                GLib.idle_add(on_idle)
+                completed.wait(timeout=3)
+            return captured
+        except Exception:  # noqa: BLE001 - clipboard availability is platform dependent
+            logger.debug("Native clipboard image fallback was unavailable", exc_info=True)
+            return None
 
 
 def run(config: AppConfig | None = None, headless: bool = False) -> None:

@@ -1231,6 +1231,25 @@ async function navigatorClipboardFiles() {
   }
 }
 
+async function nativeClipboardImage() {
+  if (!window.pywebview?.api?.read_clipboard_image) return [];
+  try {
+    const image = await window.pywebview.api.read_clipboard_image();
+    if (!image?.data || !image.type) return [];
+    const binary = atob(image.data);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return [new File([bytes], image.name || "pasted-screenshot.png", { type: image.type })];
+  } catch {
+    return [];
+  }
+}
+
+async function pastedFilesFallback() {
+  const browserFiles = await navigatorClipboardFiles();
+  return browserFiles.length ? browserFiles : nativeClipboardImage();
+}
+
 async function addPastedFiles(files) {
   if (!files.length || !state.active || state.busy) return;
   state.uploadsInProgress += files.length;
@@ -1350,8 +1369,10 @@ function wireEvents() {
     // WebKitGTK sometimes omits files from the paste event but exposes them
     // through the asynchronous Clipboard API while the key gesture is active.
     const types = [...(event.clipboardData?.types || [])];
-    if (types.some((type) => !type.startsWith("text/"))) {
-      navigatorClipboardFiles().then((clipboardFiles) => {
+    // Empty types are another WebKitGTK quirk, so let the native bridge try
+    // them too. Pure text pastes remain untouched.
+    if (types.length === 0 || types.some((type) => !type.startsWith("text/"))) {
+      pastedFilesFallback().then((clipboardFiles) => {
         if (clipboardFiles.length) addPastedFiles(clipboardFiles);
       });
     }
