@@ -14,7 +14,6 @@ import base64
 import mimetypes
 from typing import Any
 
-from ..provider.chat import parse_responses_output
 from .base import Tool, ToolError, object_schema
 from .context import ToolContext
 
@@ -35,43 +34,13 @@ def _run_view_image(args: dict[str, Any], ctx: ToolContext) -> str:
         raise ToolError("`view_image` supports PNG, JPEG, GIF, and WebP files.")
 
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-    response = ctx.session.send_responses(
-        {
-            # Match the conversation's selected Codex model. The provider's
-            # `chat_model` is only a generic local-proxy default (gpt-5.2),
-            # which ChatGPT OAuth's Codex endpoint rejects.
-            "model": ctx.model or ctx.session.config.chat_model,
-            "instructions": (
-                "You are the visual-inspection step of a coding agent. Describe the image "
-                "accurately and concisely, including visible text, layout, colours, and "
-                "anything relevant to the requested inspection."
-            ),
-            "input": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "input_text", "text": "Inspect this image for the agent."},
-                        {
-                            "type": "input_image",
-                            "image_url": f"data:{mime_type};base64,{encoded}",
-                        },
-                    ],
-                }
-            ],
-        },
-        stream=False,
-    )
-    if not isinstance(response, dict):  # Defensive: non-streaming calls return one object.
-        raise ToolError("Image inspection returned an unexpected streaming response.")
-    description = parse_responses_output(response).text.strip()
-    if not description:
-        raise ToolError("Image inspection returned no description.")
-    return f"Visual inspection of {ctx.relative(path)}:\n{description}"
+    ctx.add_model_image(f"data:{mime_type};base64,{encoded}", ctx.relative(path))
+    return "Image supplied directly to the model."
 
 
 VIEW_IMAGE = Tool(
     name="view_image",
-    description="Inspect a workspace image and return an image-aware description to the agent.",
+    description="Give the agent the actual pixels of a workspace image for its next model turn.",
     parameters=object_schema(
         {"path": {"type": "string", "description": "Workspace-relative PNG, JPEG, GIF, or WebP path."}},
         required=["path"],

@@ -477,6 +477,8 @@ const CHEVRON_ICON =
   `<path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.6"` +
   ` stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
+const HIDDEN_TOOL_NAMES = new Set(["view_image"]);
+
 /** Categorize a tool call for the group summary line ("Read 2 files, ran 1 command…"). */
 function toolCategory(name) {
   if (name === "shell") return "shell";
@@ -650,6 +652,10 @@ function renderEntries(entries) {
         }
         continue;
       }
+      if (HIDDEN_TOOL_NAMES.has(item.name)) {
+        rows.set(item.call_id || item.id, { hidden: true });
+        continue;
+      }
       if (!group) { group = toolGroup(); el.messages.appendChild(group); }
       const row = toolRow(group, item.name || "tool", item.arguments);
       rows.set(item.call_id || item.id, { group, row, name: item.name, arguments: item.arguments });
@@ -659,7 +665,7 @@ function renderEntries(entries) {
       const entry = rows.get(item.call_id);
       const output = typeof item.output === "string" ? item.output : JSON.stringify(item.output);
       const ok = !/^Error:|did not allow/.test(output);
-      if (entry) {
+      if (entry && !entry.hidden) {
         finishToolRow(entry.group, entry.row, output, ok);
         if (ok && entry.name === "showcase_file") {
           try {
@@ -964,6 +970,7 @@ function connectStream(conversationId) {
   on("tool_started", (data) => {
     // todo_write renders as its own plan card via the `todos` event.
     if (data.name === "todo_write") { setBusy(true, "Updating the plan…"); return; }
+    if (HIDDEN_TOOL_NAMES.has(data.name)) { setBusy(true, "Viewing image…"); return; }
     finalizeLiveText();
     state.liveReasoning = null;
     if (!state.liveGroup) state.liveGroup = append(toolGroup());
@@ -975,7 +982,7 @@ function connectStream(conversationId) {
 
   on("tool_finished", (data) => {
     const entry = state.toolCards.get(data.call_id);
-    if (entry) {
+    if (entry && !entry.hidden) {
       finishToolRow(entry.group, entry.row, data.output, data.ok);
       if (data.ok && entry.name === "showcase_file") {
         try {

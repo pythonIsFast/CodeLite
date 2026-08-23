@@ -40,7 +40,7 @@ reach outside it.
 prompt and a workspace-relative output path. It saves the generated image there.
 - Use `showcase_file` with a workspace-relative path when a file should appear \
 in the chat. Use `view_image` before describing or checking an image's visual \
-contents; it returns an image-aware description to you.
+contents; it supplies the actual image to your next model turn.
 - User messages can list uploaded workspace files. Inspect relevant images with \
 `view_image` and use the appropriate file tools for other uploaded files.
 - Each `shell` call is a fresh process, but the working directory carries over: \

@@ -136,6 +136,9 @@ class AgentRunner:
         over-long request, which surfaces through the normal error path.
         """
         step = 0
+        # Direct image inputs from `view_image` stay in memory only until the
+        # next turn consumes them. They must never be persisted or replayed.
+        ephemeral_inputs: list[dict[str, Any]] = []
         while True:
             step += 1
             if self.cancelled:
@@ -160,6 +163,11 @@ class AgentRunner:
                 )
                 return
 
+            if ephemeral_inputs:
+                ephemeral_ids = {id(item) for item in ephemeral_inputs}
+                items[:] = [item for item in items if id(item) not in ephemeral_ids]
+                ephemeral_inputs.clear()
+
             turn_meta = self._publish_usage(response.get("usage") or {})
 
             output_items = [i for i in (response.get("output") or []) if isinstance(i, dict)]
@@ -182,6 +190,10 @@ class AgentRunner:
             results = [self._execute_call(call, context) for call in calls]
             items.extend(results)
             self._store.append_items(self._conversation.id, results)
+            direct_inputs = context.take_model_inputs()
+            if direct_inputs:
+                items.extend(direct_inputs)
+                ephemeral_inputs.extend(direct_inputs)
 
             if self.cancelled:
                 self._publish("cancelled", {})

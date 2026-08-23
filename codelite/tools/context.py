@@ -51,6 +51,8 @@ class ToolContext:
     shell_timeout_seconds: int = 120
     cwd: Path | None = None
     todos: list[dict[str, str]] = field(default_factory=list)
+    #: One-turn multimodal inputs queued by tools such as ``view_image``.
+    pending_model_inputs: list[dict[str, Any]] = field(default_factory=list)
     publish: Callable[[str, dict[str, Any]], None] | None = None
 
     def __post_init__(self) -> None:
@@ -61,6 +63,32 @@ class ToolContext:
         """Send a UI event, if this run has somewhere to send it."""
         if self.publish is not None:
             self.publish(event, data)
+
+    def add_model_image(self, image_url: str, label: str) -> None:
+        """Give the next model turn a local image without persisting its bytes.
+
+        The agent loop consumes these entries for exactly one request. Keeping
+        a data URL in SQLite or resending it on every later step would be both
+        wasteful and surprising for a user who only asked the agent to look.
+        """
+        self.pending_model_inputs.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": f"The image requested with view_image is attached: {label}",
+                    },
+                    {"type": "input_image", "image_url": image_url},
+                ],
+            }
+        )
+
+    def take_model_inputs(self) -> list[dict[str, Any]]:
+        """Return and clear the one-turn inputs tools queued for the model."""
+        inputs = self.pending_model_inputs
+        self.pending_model_inputs = []
+        return inputs
 
     def set_cwd(self, path: Path) -> bool:
         """Adopt a new working directory, ignoring anything outside the workspace."""
