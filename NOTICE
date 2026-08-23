@@ -1,0 +1,16 @@
+Code Lite
+Copyright 2026 Code Lite contributors
+
+This product is licensed under the Apache License, Version 2.0.
+
+Portions of this software (the OAuth token refresh flow, the Codex request
+transport, and the Chat Completions / Responses translation logic in
+`codelite/provider/`) were ported from and are derived from:
+
+  openai-oauth
+  https://github.com/EvanZhouDev/openai-oauth
+  Copyright 2026 Evan Zhou and openai-oauth contributors
+  Licensed under the Apache License, Version 2.0.
+
+The code has been rewritten from TypeScript to pure-stdlib Python and
+restructured into Code Lite's own module layout; it is not a verbatim copy.
