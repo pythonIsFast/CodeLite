@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .. import settings
 from ..project.context import LSP_CONFIG_PATH
 
 RPC_TIMEOUT_SECONDS = 15.0
@@ -122,7 +123,11 @@ class LspClient:
             except (BrokenPipeError, OSError) as error:
                 raise LspError(f"{self.spec.name} language server closed its input.") from error
 
-    def request(self, method: str, params: dict[str, Any], timeout: float = RPC_TIMEOUT_SECONDS) -> Any:
+    def request(
+        self, method: str, params: dict[str, Any], timeout: float | None = None
+    ) -> Any:
+        if timeout is None:
+            timeout = float(settings.active("lsp_timeout_seconds"))
         with self._pending_lock:
             request_id = self._next_id
             self._next_id += 1
@@ -257,7 +262,7 @@ class LspClient:
         with self._diagnostic_condition:
             self._diagnostic_condition.wait_for(
                 lambda: uri in self._diagnostics,
-                timeout=DIAGNOSTIC_WAIT_SECONDS,
+                timeout=float(settings.active("lsp_diagnostic_wait_seconds")),
             )
             return list(self._diagnostics.get(uri, []))
 

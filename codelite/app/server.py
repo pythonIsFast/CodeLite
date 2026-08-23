@@ -45,6 +45,7 @@ from ..config import (
     normalize_effort,
 )
 from ..importer import import_codex_sessions, preview_codex_sessions
+from ..settings import schema as behaviour_schema
 from ..permission.modes import Mode
 from ..provider.auth import AuthError
 from ..provider.login import ChatGPTLoginManager
@@ -345,6 +346,38 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         except (OSError, UnicodeDecodeError):
             memory = ""
         return jsonify({"memory": memory, "memory_path": str(path)})
+
+    @app.get("/api/settings/behaviour")
+    def behaviour_settings():
+        """Current values plus the schema that describes the form.
+
+        The schema travels with the values so the UI cannot invent a bound the
+        server would reject -- there is one table, in `codelite/settings.py`.
+        """
+        runtime = rt()
+        try:
+            models = runtime.session.list_models()
+        except Exception:  # noqa: BLE001 - the form is still usable offline
+            models = []
+        return jsonify(
+            {
+                "values": runtime.behaviour_settings(),
+                "schema": behaviour_schema(
+                    chat_models(models, runtime.session.config.image_model)
+                ),
+            }
+        )
+
+    @app.put("/api/settings/behaviour")
+    def save_behaviour_settings():
+        values = _body().get("values")
+        if not isinstance(values, dict):
+            return jsonify({"error": "`values` must be an object."}), 400
+        try:
+            saved = rt().save_behaviour_settings(values)
+        except ValueError as error:
+            return jsonify({"error": str(error)}), 400
+        return jsonify({"values": saved})
 
     @app.put("/api/settings/memory")
     def save_global_memory():

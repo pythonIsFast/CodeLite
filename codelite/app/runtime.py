@@ -31,6 +31,7 @@ from typing import Any, Iterator
 
 from ..agent.judge import make_shell_judge
 from ..agent.loop import AgentRunner
+from .. import settings as behaviour
 from ..config import AppConfig, normalize_effort
 from ..db.store import Conversation, Store
 from ..permission.manager import PermissionManager
@@ -46,6 +47,7 @@ KEEPALIVE_SECONDS = 15.0
 
 #: Where the last plan-usage snapshot is cached in the store.
 PLAN_USAGE_KEY = "plan_usage"
+BEHAVIOUR_KEY = "behaviour"
 
 
 class RunInProgress(Exception):
@@ -80,6 +82,37 @@ class Runtime:
         )
         self._conversations: dict[str, ConversationRuntime] = {}
         self._lock = threading.Lock()
+        self._apply_behaviour(self.store.get_state(BEHAVIOUR_KEY) or {})
+
+    # -- behaviour settings --------------------------------------------------
+
+    def _apply_behaviour(self, raw: dict[str, Any]) -> dict[str, Any]:
+        """Fold stored settings onto the config, clamped by the schema.
+
+        Applied at startup and after every save, and mirrored into the
+        `settings` module for the LSP/MCP singletons that cannot reach the
+        config. Anything the schema rejects falls back to its default, so a
+        hand-edited database cannot produce an unrunnable app.
+        """
+        values = behaviour.coerce(raw if isinstance(raw, dict) else {})
+        for key, value in values.items():
+            if hasattr(self.config, key):
+                setattr(self.config, key, tuple(value) if isinstance(value, list) else value)
+        behaviour.apply(values)
+        return values
+
+    def behaviour_settings(self) -> dict[str, Any]:
+        return behaviour.coerce(self.store.get_state(BEHAVIOUR_KEY) or {})
+
+    def save_behaviour_settings(self, raw: dict[str, Any]) -> dict[str, Any]:
+        """Validate, persist and activate. Raises ValueError on a bad type."""
+        try:
+            models = self.session.list_models()
+        except Exception:  # noqa: BLE001 - a catalog outage must not block a save
+            models = []
+        values = behaviour.coerce(raw, models)
+        self.store.set_state(BEHAVIOUR_KEY, values)
+        return self._apply_behaviour(values)
 
     # -- conversations -------------------------------------------------------
 

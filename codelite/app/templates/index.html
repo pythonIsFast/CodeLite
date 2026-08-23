@@ -237,6 +237,8 @@
         <button type="button" class="settings-tab" id="project-settings-tab" role="tab"
                 aria-selected="false" data-settings-tab="project">Project</button>
         <button type="button" class="settings-tab" role="tab"
+                aria-selected="false" data-settings-tab="behaviour">Behaviour</button>
+        <button type="button" class="settings-tab" role="tab"
                 aria-selected="false" data-settings-tab="import">Import</button>
       </div>
       <section class="settings-panel" data-settings-panel="account">
@@ -277,6 +279,14 @@
           <textarea id="project-lsp-config" rows="6" spellcheck="false"></textarea>
         </label>
         <button type="button" class="btn" id="project-lsp-save">Save LSP config</button>
+      </section>
+      <section class="settings-panel" data-settings-panel="behaviour" hidden>
+        <div class="behaviour-groups" id="behaviour-groups"></div>
+        <div class="behaviour-actions">
+          <button type="button" class="btn" id="behaviour-reset">Restore defaults</button>
+          <button type="button" class="btn primary" id="behaviour-save">Save settings</button>
+        </div>
+        <p class="auth-status" id="behaviour-status"></p>
       </section>
       <section class="settings-panel" data-settings-panel="import" hidden>
         <h3>Import from Codex</h3>

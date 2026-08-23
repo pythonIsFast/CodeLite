@@ -34,17 +34,20 @@ from typing import Any
 from .base import Tool, ToolError, object_schema
 from .context import ToolContext
 
-MAX_OUTPUT_CHARS = 20_000
+#: Fallback only. The live limit comes from the conversation's context, which
+#: carries the configured value -- truncating here at a second, lower number
+#: made that setting dead for the tool that produces the most output.
+DEFAULT_MAX_OUTPUT_CHARS = 20_000
 
 # Unlikely to collide with real output, and stripped before the model sees it.
 _CWD_MARKER = "__codelite_cwd_5f2b7a__:"
 
 
-def _clip(text: str, label: str) -> str:
-    if len(text) <= MAX_OUTPUT_CHARS:
+def _clip(text: str, label: str, limit: int = DEFAULT_MAX_OUTPUT_CHARS) -> str:
+    if len(text) <= limit:
         return text
-    kept = text[:MAX_OUTPUT_CHARS]
-    return f"{kept}\n... [{label} truncated, {len(text) - MAX_OUTPUT_CHARS} more characters]"
+    kept = text[:limit]
+    return f"{kept}\n... [{label} truncated, {len(text) - limit} more characters]"
 
 
 def _wrap(command: str) -> str:
@@ -122,9 +125,9 @@ def _run_shell(args: dict[str, Any], ctx: ToolContext) -> str:
     if started_in != ctx.workspace:
         sections[0] += f"  (ran in ./{ctx.relative(started_in)})"
     if stdout.strip():
-        sections.append(f"stdout:\n{_clip(stdout, 'stdout')}")
+        sections.append(f"stdout:\n{_clip(stdout, 'stdout', ctx.max_tool_output_chars)}")
     if completed.stderr.strip():
-        sections.append(f"stderr:\n{_clip(completed.stderr, 'stderr')}")
+        sections.append(f"stderr:\n{_clip(completed.stderr, 'stderr', ctx.max_tool_output_chars)}")
     if len(sections) == 1:
         sections.append("(no output)")
     if moved_to:

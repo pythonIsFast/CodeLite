@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Sequence
 
 from ..config import normalize_effort
 from ..provider.chat import parse_responses_output
@@ -57,8 +57,23 @@ Effort costs time and tokens on every turn of the run, so do not raise it
 because the task sounds important -- raise it only when thinking harder is
 what the task actually needs.
 
-Return JSON only: {"model":"gpt-5.6-luna|gpt-5.6-terra|gpt-5.6-sol", "effort":"low|medium|high", "reason":"one concise sentence for the user"}.\
+Return JSON only: {"model":"%(models)s", "effort":"low|medium|high", "reason":"one concise sentence for the user"}.\
 """
+
+
+def _instructions(allowed: Sequence[str]) -> str:
+    """Name only the models the router is actually allowed to return.
+
+    Offering a model in the prompt that the caller then rejects wastes a whole
+    routing round trip on a decision that can only fail validation.
+    """
+    text = ROUTER_INSTRUCTIONS % {"models": "|".join(allowed)}
+    # The prose above still describes every model by name. When the set has
+    # been narrowed, say so explicitly rather than relying on validation to
+    # catch a choice the prompt itself invited.
+    if set(allowed) != ROUTABLE_MODELS:
+        text += f"\n\nOnly these models are available: {', '.join(allowed)}."
+    return text
 
 
 @dataclass(frozen=True)
@@ -93,12 +108,25 @@ def _parse_json(text: str) -> dict[str, Any] | None:
     return parsed if isinstance(parsed, dict) else None
 
 
-def select_model(session: Session, user_text: str) -> tuple[ModelDecision, dict[str, Any]]:
-    """Use Luna with low reasoning and fall back to Terra if routing fails."""
+def select_model(
+    session: Session,
+    user_text: str,
+    *,
+    router_model: str = ROUTER_MODEL,
+    fallback_model: str = FALLBACK_MODEL,
+    routable: Sequence[str] = (),
+) -> tuple[ModelDecision, dict[str, Any]]:
+    """Route one message, falling back to `fallback_model` if that fails.
+
+    The model set is passed in rather than read from the module constant so it
+    can be narrowed in settings -- dropping the largest model is the simplest
+    cap on what a single run can cost.
+    """
+    allowed = tuple(routable) or tuple(ROUTABLE_MODELS)
     body = {
-        "model": ROUTER_MODEL,
+        "model": router_model or ROUTER_MODEL,
         "reasoning": {"effort": "low"},
-        "instructions": ROUTER_INSTRUCTIONS,
+        "instructions": _instructions(allowed),
         "input": [{"role": "user", "content": [{"type": "input_text", "text": user_text}]}],
     }
     try:
@@ -111,7 +139,7 @@ def select_model(session: Session, user_text: str) -> tuple[ModelDecision, dict[
         parsed = _parse_json(text)
         model = parsed.get("model") if parsed else None
         reason = parsed.get("reason") if parsed else None
-        if model not in ROUTABLE_MODELS or not isinstance(reason, str) or not reason.strip():
+        if model not in allowed or not isinstance(reason, str) or not reason.strip():
             raise ValueError("Luna returned an invalid routing decision.")
         # An unusable effort is not worth failing the whole routing decision
         # over: normalize_effort returns "" and the model's catalog default
@@ -121,7 +149,7 @@ def select_model(session: Session, user_text: str) -> tuple[ModelDecision, dict[
     except Exception as error:  # noqa: BLE001 - routing must never prevent a task
         return (
             ModelDecision(
-                model=FALLBACK_MODEL,
+                model=fallback_model or FALLBACK_MODEL,
                 reason=(
                     "Auto could not make a routing decision, so Code Lite chose "
                     "Terra as the balanced fallback."

@@ -83,6 +83,10 @@ const el = {
   globalMemory: $("global-memory"),
   globalMemoryPath: $("global-memory-path"),
   globalMemorySave: $("global-memory-save"),
+  behaviourGroups: $("behaviour-groups"),
+  behaviourSave: $("behaviour-save"),
+  behaviourReset: $("behaviour-reset"),
+  behaviourStatus: $("behaviour-status"),
   importSummary: $("import-summary"),
   importStatus: $("import-status"),
   codexImport: $("codex-import"),
@@ -106,6 +110,7 @@ const state = {
   models: [],
   efforts: [],
   capabilities: {},
+  behaviour: null,
   pendingRename: null,
   pendingDelete: null,
   conversations: [],
@@ -222,6 +227,169 @@ function selectSettingsTab(name) {
 
 function plural(count, singular, suffix = "s") {
   return `${count} ${singular}${count === 1 ? "" : suffix}`;
+}
+
+/* -- Behaviour settings --------------------------------------------------- */
+
+function behaviourRow(setting, value, models) {
+  const row = document.createElement("div");
+  row.className = "behaviour-row";
+
+  const label = document.createElement("label");
+  label.className = "behaviour-label";
+  const name = document.createElement("span");
+  name.textContent = setting.label;
+  const help = document.createElement("span");
+  help.className = "behaviour-help";
+  help.textContent = setting.help;
+  label.append(name, help);
+
+  const control = document.createElement("div");
+  control.className = "behaviour-control";
+
+  if (setting.kind === "models") {
+    const list = document.createElement("div");
+    list.className = "behaviour-models";
+    const selected = new Set(value || []);
+    // Fall back to the stored value when the catalog is unreachable, so an
+    // offline form still shows what is actually configured.
+    const choices = models.length ? models : [...selected];
+    for (const model of choices) {
+      const pill = document.createElement("label");
+      pill.className = "behaviour-model" + (selected.has(model) ? " on" : "");
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = selected.has(model);
+      box.dataset.model = model;
+      box.addEventListener("change", () => pill.classList.toggle("on", box.checked));
+      const text = document.createElement("span");
+      text.textContent = model;
+      pill.append(box, text);
+      list.appendChild(pill);
+    }
+    list.dataset.settingKey = setting.key;
+    control.appendChild(list);
+  } else if (setting.kind === "model") {
+    const picker = document.createElement("div");
+    picker.className = "custom-select field-picker";
+    picker.setAttribute("data-select-picker", "");
+    const select = document.createElement("select");
+    select.className = "custom-select-source";
+    select.tabIndex = -1;
+    select.dataset.settingKey = setting.key;
+    const choices = models.includes(value) || !value ? models : [value, ...models];
+    for (const model of choices.length ? choices : [value]) {
+      const option = document.createElement("option");
+      option.value = model;
+      option.textContent = model;
+      select.appendChild(option);
+    }
+    select.value = value;
+    const trigger = document.createElement("button");
+    trigger.type = "button";
+    trigger.className = "custom-select-trigger";
+    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.setAttribute("aria-expanded", "false");
+    const menu = document.createElement("div");
+    menu.className = "custom-select-menu";
+    menu.setAttribute("role", "listbox");
+    menu.hidden = true;
+    picker.append(select, trigger, menu);
+    control.appendChild(picker);
+    // The custom picker has to be initialised after the option list exists.
+    requestAnimationFrame(() => renderCustomSelect(select));
+  } else {
+    const input = document.createElement("input");
+    input.type = "number";
+    input.dataset.settingKey = setting.key;
+    input.dataset.kind = setting.kind;
+    if (setting.minimum !== null) input.min = setting.minimum;
+    if (setting.maximum !== null) input.max = setting.maximum;
+    input.step = setting.step ?? (setting.kind === "float" ? 0.01 : 1);
+    input.value = value;
+    // The server clamps too, but flagging it here means the user sees which
+    // field is out of range rather than a corrected number appearing later.
+    input.addEventListener("input", () => {
+      const number = Number(input.value);
+      const low = setting.minimum !== null && number < setting.minimum;
+      const high = setting.maximum !== null && number > setting.maximum;
+      input.classList.toggle("out-of-range", input.value !== "" && (low || high));
+    });
+    control.appendChild(input);
+    if (setting.unit) {
+      const unit = document.createElement("span");
+      unit.className = "behaviour-unit";
+      unit.textContent = setting.unit;
+      control.appendChild(unit);
+    }
+  }
+
+  row.append(label, control);
+  return row;
+}
+
+function renderBehaviour(schema, values) {
+  el.behaviourGroups.replaceChildren();
+  const models = schema.models || [];
+  for (const group of schema.groups) {
+    const settings = schema.settings.filter((setting) => setting.group === group.key);
+    if (!settings.length) continue;
+    const section = document.createElement("section");
+    section.className = "behaviour-group" + (group.key === "danger" ? " danger" : "");
+    const heading = document.createElement("h3");
+    heading.textContent = group.label;
+    const help = document.createElement("p");
+    help.className = "behaviour-group-help";
+    help.textContent = group.help;
+    section.append(heading, help);
+    for (const setting of settings) {
+      section.appendChild(behaviourRow(setting, values[setting.key], models));
+    }
+    el.behaviourGroups.appendChild(section);
+  }
+}
+
+async function loadBehaviour() {
+  const data = await get("/api/settings/behaviour");
+  state.behaviour = data;
+  renderBehaviour(data.schema, data.values);
+  el.behaviourStatus.textContent = "";
+}
+
+function collectBehaviour() {
+  const values = {};
+  for (const input of el.behaviourGroups.querySelectorAll("input[type=number]")) {
+    const raw = Number(input.value);
+    if (input.value === "" || Number.isNaN(raw)) continue;
+    values[input.dataset.settingKey] = input.dataset.kind === "int" ? Math.round(raw) : raw;
+  }
+  for (const select of el.behaviourGroups.querySelectorAll("select[data-setting-key]")) {
+    values[select.dataset.settingKey] = select.value;
+  }
+  for (const list of el.behaviourGroups.querySelectorAll("[data-setting-key].behaviour-models")) {
+    values[list.dataset.settingKey] = [...list.querySelectorAll("input:checked")]
+      .map((box) => box.dataset.model);
+  }
+  return values;
+}
+
+async function saveBehaviour(values) {
+  const data = await api("/api/settings/behaviour", {
+    method: "PUT",
+    body: JSON.stringify({ values }),
+  });
+  // Re-render from what the server stored: it clamps, so the form must show
+  // the value that is actually in effect, not the one that was typed.
+  state.behaviour = { ...state.behaviour, values: data.values };
+  renderBehaviour(state.behaviour.schema, data.values);
+  const clamped = Object.keys(data.values).filter(
+    (key) => String(data.values[key]) !== String(values[key]) && key in values,
+  );
+  el.behaviourStatus.textContent = clamped.length
+    ? `Saved. ${clamped.length} value(s) were adjusted to their allowed range.`
+    : "Saved.";
+  toast("Settings saved.");
+  await loadModels();
 }
 
 async function loadCodexImport() {
@@ -2016,6 +2184,7 @@ function wireEvents() {
       loadGlobalSettings(),
       loadProjectSettings(),
       loadCodexImport(),
+      loadBehaviour(),
     ]).catch((error) => toast(error.message, true));
     el.importStatus.textContent = "";
     selectSettingsTab("account");
@@ -2024,6 +2193,22 @@ function wireEvents() {
   for (const tab of el.settingsTabs) {
     tab.addEventListener("click", () => selectSettingsTab(tab.dataset.settingsTab));
   }
+  el.behaviourSave.addEventListener("click", () => {
+    saveBehaviour(collectBehaviour()).catch((error) => {
+      el.behaviourStatus.textContent = error.message;
+      toast(error.message, true);
+    });
+  });
+  el.behaviourReset.addEventListener("click", () => {
+    if (!state.behaviour) return;
+    const defaults = {};
+    for (const setting of state.behaviour.schema.settings) defaults[setting.key] = setting.default;
+    renderBehaviour(state.behaviour.schema, defaults);
+    // Rendered, not saved: restoring is a proposal until the user confirms it
+    // with Save, the same as any other edit in this panel.
+    el.behaviourStatus.textContent = "Defaults filled in — press Save to apply them.";
+  });
+
   el.codexImport.addEventListener("click", () => {
     runCodexImport().catch((error) => { el.importStatus.textContent = error.message; });
   });

@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .. import settings
 from ..project.context import MCP_CONFIG_PATH
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
@@ -100,7 +101,11 @@ class McpClient:
             except (BrokenPipeError, OSError) as error:
                 raise McpError(f"MCP server `{self.name}` closed its input.") from error
 
-    def request(self, method: str, params: dict[str, Any], timeout: float = RPC_TIMEOUT_SECONDS) -> Any:
+    def request(
+        self, method: str, params: dict[str, Any], timeout: float | None = None
+    ) -> Any:
+        if timeout is None:
+            timeout = float(settings.active("mcp_timeout_seconds"))
         with self._pending_lock:
             request_id = self._next_id
             self._next_id += 1

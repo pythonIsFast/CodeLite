@@ -183,9 +183,9 @@ def _repository_instruction_files(workspace: Path) -> list[Path]:
     return sorted(files, key=lambda path: (len(path.relative_to(root).parts), str(path)))
 
 
-def _repository_instructions(workspace: Path) -> str:
+def _repository_instructions(workspace: Path, budget: int = MAX_INSTRUCTION_CHARS) -> str:
     root = Path(workspace).resolve()
-    remaining = MAX_INSTRUCTION_CHARS
+    remaining = budget
     documents: list[str] = []
     for path in _repository_instruction_files(root):
         if remaining <= 0:
@@ -209,11 +209,22 @@ def _repository_instructions(workspace: Path) -> str:
     )
 
 
-def build_project_context(workspace: Path, data_dir: Path) -> str:
-    """Build a tightly bounded prompt fragment for one workspace."""
+def build_project_context(
+    workspace: Path,
+    data_dir: Path,
+    *,
+    memory_chars: int = MAX_MEMORY_CHARS,
+    instruction_chars: int = MAX_INSTRUCTION_CHARS,
+) -> str:
+    """Build a tightly bounded prompt fragment for one workspace.
+
+    The budgets are arguments because this text is sent on every run, so its
+    size is a cost the user should be able to weigh -- but they stay bounded by
+    the caller, which clamps them before they arrive here.
+    """
     sections: list[str] = []
     root = Path(workspace).resolve()
-    instructions = _repository_instructions(root)
+    instructions = _repository_instructions(root, instruction_chars)
     if instructions:
         sections.append(instructions)
     data_root = Path(data_dir).resolve()
@@ -226,7 +237,7 @@ def build_project_context(workspace: Path, data_dir: Path) -> str:
         except (OSError, UnicodeDecodeError):
             global_memory = ""
     if global_memory:
-        clipped = global_memory[:MAX_MEMORY_CHARS]
+        clipped = global_memory[:memory_chars]
         if len(global_memory) > len(clipped):
             clipped += "\n[Global memory truncated; keep it more concise.]"
         sections.append(
@@ -241,7 +252,7 @@ def build_project_context(workspace: Path, data_dir: Path) -> str:
         except (OSError, UnicodeDecodeError):
             memory = ""
     if memory:
-        clipped = memory[:MAX_MEMORY_CHARS]
+        clipped = memory[:memory_chars]
         if len(memory) > len(clipped):
             clipped += "\n[Project memory truncated; keep it more concise.]"
         sections.append("Project memory (stable facts, not current-task instructions):\n" + clipped)

@@ -126,7 +126,13 @@ class AgentRunner:
         self._run_effort = self._conversation.reasoning_effort
         if self._run_model == AUTO_MODEL:
             self._publish("model_routing", {"router": "Auto"})
-            decision, response = select_model(self._session, user_text)
+            decision, response = select_model(
+                self._session,
+                user_text,
+                router_model=self._config.auto_router_model,
+                fallback_model=self._config.auto_fallback_model,
+                routable=self._config.auto_models,
+            )
             self._run_model = decision.model
             self._run_effort = decision.effort or self._run_effort
             self._record_auxiliary_usage(response.get("usage") if isinstance(response, dict) else None)
@@ -136,7 +142,10 @@ class AgentRunner:
         # A run may contain many tool turns, so rebuilding this bounded context
         # per turn only adds latency and token-accounting work.
         self._project_context = build_project_context(
-            Path(self._conversation.workspace), self._config.data_dir
+            Path(self._conversation.workspace),
+            self._config.data_dir,
+            memory_chars=self._config.max_memory_chars,
+            instruction_chars=self._config.max_instruction_chars,
         )
         self._local_extensions = LocalExtensionHost(
             Path(self._conversation.workspace), set(registry.names())
@@ -168,6 +177,7 @@ class AgentRunner:
             model=self._run_model,
             task_prompt=user_text,
             shell_timeout_seconds=self._config.shell_timeout_seconds,
+            max_tool_output_chars=self._config.max_tool_output_chars,
             publish=self._publish,
         )
 

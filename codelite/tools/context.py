@@ -52,6 +52,9 @@ class ToolContext:
     model: str = ""
     task_prompt: str = ""
     shell_timeout_seconds: int = 120
+    #: The configured tool-output limit, so a tool that truncates its own
+    #: output uses the same number the loop would.
+    max_tool_output_chars: int = 30_000
     cwd: Path | None = None
     todos: list[dict[str, str]] = field(default_factory=list)
     #: One-turn multimodal inputs queued by tools such as ``view_image``.

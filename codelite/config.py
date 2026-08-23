@@ -149,6 +149,17 @@ class AppConfig:
     context_stop_fraction: float = CONTEXT_STOP_FRACTION
     context_compact_fraction: float = CONTEXT_COMPACT_FRACTION
     compaction_recent_items: int = COMPACTION_RECENT_ITEMS
+    #: Which models the Auto picker may route to, and how it recovers.
+    auto_router_model: str = DEFAULT_JUDGE_MODEL
+    auto_fallback_model: str = "gpt-5.6-terra"
+    auto_models: tuple[str, ...] = ("gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol")
+    #: How long to wait on a language server or MCP server, per request.
+    lsp_timeout_seconds: float = 15.0
+    lsp_diagnostic_wait_seconds: float = 1.0
+    mcp_timeout_seconds: float = 20.0
+    #: How much project text is put in front of the model, per run.
+    max_memory_chars: int = 2_500
+    max_instruction_chars: int = 12_000
 
     def __post_init__(self) -> None:
         self.data_dir = Path(self.data_dir)
