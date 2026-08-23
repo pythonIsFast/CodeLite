@@ -370,7 +370,7 @@ function modelDecisionCard(data) {
   const card = document.createElement("section");
   card.className = "model-decision";
   const title = document.createElement("strong");
-  title.textContent = `${data.router || "Luna"} chose ${data.model_name || data.model}`;
+  title.textContent = `Auto selected ${modelDisplayName(data)}`;
   const reason = document.createElement("p");
   reason.textContent = data.reason || "Choosing the lowest capable model.";
   card.append(title, reason);
@@ -383,11 +383,16 @@ function modelDecisionCard(data) {
     if (!profile) continue;
     const row = document.createElement("p");
     row.className = model === data.model ? "selected" : "";
-    row.textContent = `${profile.name}: ${profile.fit} ${profile.limit}`;
+    const name = model === "gpt-5.6-luna" ? "Auto" : profile.name;
+    row.textContent = `${name}: ${profile.fit} ${profile.limit}`.replaceAll("Luna", "Auto");
     list.appendChild(row);
   }
   card.appendChild(list);
   return card;
+}
+
+function modelDisplayName(data) {
+  return data.model === "gpt-5.6-luna" ? "Auto" : (data.model_name || data.model);
 }
 
 /* -- Message footer -------------------------------------------------------- */
@@ -1036,10 +1041,10 @@ function connectStream(conversationId) {
     });
 
   on("ready", (data) => setBusy(Boolean(data.busy)));
-  on("model_routing", () => setBusy(true, "Luna is choosing a model…"));
+  on("model_routing", () => setBusy(true, "Choosing the best model…"));
   on("model_selected", (data) => {
     append(modelDecisionCard(data));
-    setBusy(true, `Luna chose ${data.model_name || data.model}…`);
+    setBusy(true, `Auto selected ${modelDisplayName(data)}…`);
     scrollDown();
   });
 
@@ -1458,7 +1463,7 @@ function ensureModelOption(model) {
   if (!model || [...el.modelSelect.options].some((o) => o.value === model)) return;
   const option = document.createElement("option");
   option.value = model;
-  option.textContent = model === "auto" ? "Auto (Luna decides)" : model;
+  option.textContent = model === "auto" ? "Auto" : model;
   el.modelSelect.appendChild(option);
   renderCustomSelect(el.modelSelect);
 }
@@ -1487,7 +1492,7 @@ async function loadModels() {
   for (const model of state.models) {
     const option = document.createElement("option");
     option.value = model;
-    option.textContent = model === "auto" ? "Auto (Luna decides)" : model;
+    option.textContent = model === "auto" ? "Auto" : model;
     el.modelSelect.appendChild(option);
   }
   renderCustomSelect(el.modelSelect);

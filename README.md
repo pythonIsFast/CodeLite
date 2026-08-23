@@ -52,10 +52,10 @@ python3 run.py --mode permit_writes --model gpt-5.6-sol
 python3 run.py --headless
 ```
 
-The model picker also offers **Auto (Luna decides)**. Before each message,
-`gpt-5.6-luna` routes with low reasoning to the lowest capable model: Luna for
+The model picker also offers **Auto**. Before each message,
+`gpt-5.6-luna` routes with low reasoning to the lowest capable model: Auto for
 focused routine work, Terra for normal multi-file work and debugging, and Sol
-only for genuinely complex or high-risk tasks. Code Lite shows Luna's decision
+only for genuinely complex or high-risk tasks. Code Lite shows Auto's decision
 and the role and limits of all three models in the chat before the main agent
 starts. If routing is unavailable, it falls back to Terra rather than Sol.
 

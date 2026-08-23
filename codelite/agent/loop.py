@@ -115,7 +115,7 @@ class AgentRunner:
         self._run_tokens_used = 0
         self._run_model = self._conversation.model
         if self._run_model == AUTO_MODEL:
-            self._publish("model_routing", {"router": "Luna"})
+            self._publish("model_routing", {"router": "Auto"})
             decision, response = select_model(self._session, user_text)
             self._run_model = decision.model
             self._record_auxiliary_usage(response.get("usage") if isinstance(response, dict) else None)
