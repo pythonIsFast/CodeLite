@@ -33,6 +33,7 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import PurePosixPath
 from typing import Any, Callable, Literal
 
 from .modes import Mode
@@ -80,6 +81,9 @@ class PendingRequest:
     judge_reason: str = ""
     #: Unified diff of the pending change, for write requests.
     diff: str = ""
+    #: The narrow capability that a session approval will grant.
+    session_scope: str = ""
+    _session_grant: str = field(default="", repr=False)
     created_at: str = field(
         default_factory=lambda: datetime.now(tz=timezone.utc).isoformat()
     )
@@ -95,6 +99,7 @@ class PendingRequest:
             "judge_reason": self.judge_reason,
             "diff": self.diff,
             "created_at": self.created_at,
+            "session_scope": self.session_scope,
         }
 
 
@@ -112,8 +117,9 @@ class PermissionManager:
         self._judge = judge
         self._lock = threading.Lock()
         self._pending: dict[str, PendingRequest] = {}
-        #: Categories the user granted for the rest of this conversation.
-        self._session_grants: set[Kind] = set()
+        #: Narrow capabilities granted for the rest of this conversation.
+        self._write_grants: set[str] = set()
+        self._shell_grants: set[tuple[str, str]] = set()
 
     # -- mode ---------------------------------------------------------------
 
@@ -140,9 +146,11 @@ class PermissionManager:
                 decision.reason or f"Permission to write {path} was denied by the user."
             )
 
-    def require_shell(self, command: str, task_prompt: str = "") -> None:
+    def require_shell(
+        self, command: str, task_prompt: str = "", working_directory: str = "."
+    ) -> None:
         """Gate a shell command. Raises :class:`PermissionDenied` if refused."""
-        decision = self._decide_shell(command, task_prompt)
+        decision = self._decide_shell(command, task_prompt, working_directory)
         if not decision.allowed:
             raise PermissionDenied(
                 decision.reason
@@ -153,15 +161,17 @@ class PermissionManager:
         mode = self.mode
         if not mode.writes_need_approval:
             return Decision(allowed=True, reason=f"{mode.label} mode", source="mode")
-        if self._has_session_grant("write"):
+        if self._has_write_grant(path):
             return Decision(allowed=True, reason="Approved for this session", source="session")
         return self._ask_user("write", path, diff=diff)
 
-    def _decide_shell(self, command: str, task_prompt: str) -> Decision:
+    def _decide_shell(
+        self, command: str, task_prompt: str, working_directory: str
+    ) -> Decision:
         mode = self.mode
         if mode is Mode.BYPASS:
             return Decision(allowed=True, reason="Bypass mode", source="mode")
-        if self._has_session_grant("shell"):
+        if self._has_shell_grant(command, working_directory):
             return Decision(allowed=True, reason="Approved for this session", source="session")
 
         if mode is Mode.AUTO:
@@ -171,9 +181,11 @@ class PermissionManager:
             # The judge said no. That is not a silent abort: escalate to the
             # user right away, carrying the judge's reasoning so they can see
             # what the agent was told and decide for themselves.
-            return self._ask_user("shell", command, judge_reason=reason)
+            return self._ask_user(
+                "shell", command, judge_reason=reason, working_directory=working_directory
+            )
 
-        return self._ask_user("shell", command)
+        return self._ask_user("shell", command, working_directory=working_directory)
 
     def _run_judge(self, command: str, task_prompt: str) -> tuple[bool, str]:
         if self._judge is None:
@@ -192,7 +204,12 @@ class PermissionManager:
     # -- user round-trip -------------------------------------------------------
 
     def _ask_user(
-        self, kind: Kind, detail: str, judge_reason: str = "", diff: str = ""
+        self,
+        kind: Kind,
+        detail: str,
+        judge_reason: str = "",
+        diff: str = "",
+        working_directory: str = ".",
     ) -> Decision:
         request = PendingRequest(
             id=uuid.uuid4().hex,
@@ -200,6 +217,10 @@ class PermissionManager:
             detail=detail,
             judge_reason=judge_reason,
             diff=diff,
+            session_scope=self._session_scope(kind, detail, working_directory),
+            _session_grant=(
+                self._write_scope(detail) if kind == "write" else working_directory or "."
+            ),
         )
         with self._lock:
             self._pending[request.id] = request
@@ -211,7 +232,12 @@ class PermissionManager:
             self._pending.pop(request.id, None)
             reply, feedback = request._reply, request._feedback
             if reply == "session":
-                self._session_grants.add(kind)
+                if kind == "write":
+                    self._write_grants.add(request._session_grant)
+                else:
+                    self._shell_grants.add(
+                        (request._session_grant, self._normalize_command(detail))
+                    )
 
         if reply in ("once", "session"):
             return Decision(
@@ -255,6 +281,30 @@ class PermissionManager:
                 request._feedback = "The run was cancelled."
             request._event.set()
 
-    def _has_session_grant(self, kind: Kind) -> bool:
+    @staticmethod
+    def _normalize_command(command: str) -> str:
+        return " ".join(command.split())
+
+    @staticmethod
+    def _write_scope(path: str) -> str:
+        parent = PurePosixPath(path.replace("\\", "/")).parent.as_posix()
+        return parent if parent not in ("", ".") else "."
+
+    def _session_scope(self, kind: Kind, detail: str, working_directory: str) -> str:
+        if kind == "write":
+            directory = self._write_scope(detail)
+            return f"./{directory}" if directory != "." else "workspace root"
+        directory = working_directory or "."
+        return f"`{detail}` in ./{directory}" if directory != "." else f"`{detail}` in workspace root"
+
+    def _has_write_grant(self, path: str) -> bool:
         with self._lock:
-            return kind in self._session_grants
+            scope = self._write_scope(path)
+            return any(
+                grant == "." or scope == grant or scope.startswith(f"{grant}/")
+                for grant in self._write_grants
+            )
+
+    def _has_shell_grant(self, command: str, working_directory: str) -> bool:
+        with self._lock:
+            return (working_directory or ".", self._normalize_command(command)) in self._shell_grants

@@ -110,6 +110,10 @@ answer instead of a spinner.
 - **Persistence** — conversations and full history in SQLite, so restarting
   the app doesn't lose anything. Token usage is stored per conversation, so
   the context ring reflects the chat's real size the moment you open it.
+- **Automatic context compaction** — when a chat approaches its input budget,
+  Code Lite replaces older working context with a self-contained summary and
+  keeps the newest exchanges intact. The full original transcript remains
+  visible and stored locally.
 - **Plan usage** — how much of your weekly ChatGPT allowance is gone, read
   from the `x-codex-*` response headers Codex attaches to every `/responses`
   call. There is no endpoint for this, so the figure only refreshes when a
@@ -126,9 +130,9 @@ answer instead of a spinner.
 - **Context-window sizes come from Codex's own catalog** (`context_window`
   per model). `codelite/config.py` carries a static table as an offline
   fallback only, so the percentage is real unless the catalog is unreachable.
-- **"Allow for session" is coarse.** It grants the whole category (all writes,
-  or all shell commands) for the rest of the conversation, not a specific
-  path or command pattern.
+- **Session allowances are narrow.** A write allowance applies only to the
+  displayed directory; a shell allowance applies only to the exact command in
+  its current working directory. A different path or command asks again.
 - **Chat Completions streaming translation is unverified against a live
   stream.** The provider's `/v1/chat/completions` path exists for external
   OpenAI-client compatibility; its non-streaming path is solid, but the

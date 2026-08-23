@@ -45,11 +45,15 @@ MAX_TOOL_OUTPUT_CHARS = 30_000
 
 #: There is deliberately no step cap: a task takes as many turns as it takes,
 #: and an arbitrary ceiling just abandons work halfway. The context window is
-#: the real budget, so a run stops when it has nearly filled it.
-#:
-#: 0.95 is not arbitrary -- it is the same headroom the official Codex CLI
-#: keeps before it compacts (0.95 of the 272000 input budget, so ~258400).
+#: the real budget, so older history is compacted before it gets close to full.
+#: The hard stop remains only as a safe fallback if compaction itself fails.
+CONTEXT_COMPACT_FRACTION = 0.80
 CONTEXT_STOP_FRACTION = 0.95
+# Keep the most recent conversation exchange intact when replacing older
+# history with a compact working summary. Responses items are deliberately
+# counted rather than guessed from characters; token usage remains upstream's
+# source of truth.
+COMPACTION_RECENT_ITEMS = 16
 
 # Offline fallback only. Codex's /models catalog does report each model's real
 # `context_window`, and that is what the app prefers -- see
@@ -96,6 +100,8 @@ class AppConfig:
     shell_timeout_seconds: int = SHELL_TIMEOUT_SECONDS
     max_tool_output_chars: int = MAX_TOOL_OUTPUT_CHARS
     context_stop_fraction: float = CONTEXT_STOP_FRACTION
+    context_compact_fraction: float = CONTEXT_COMPACT_FRACTION
+    compaction_recent_items: int = COMPACTION_RECENT_ITEMS
 
     def __post_init__(self) -> None:
         self.data_dir = Path(self.data_dir)

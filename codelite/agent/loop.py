@@ -49,6 +49,13 @@ Publisher = Callable[[str, dict[str, Any]], None]
 
 TITLE_MAX_CHARS = 60
 
+COMPACTION_INSTRUCTIONS = """\
+Create concise working memory for a coding agent from the conversation items
+below. Preserve the user's goal, relevant files and their current state,
+decisions, commands and results, unfinished work, errors, and next steps.
+Do not include filler or repeat large file contents. This summary replaces
+older history, so make it self-contained. Return only the summary text."""
+
 
 class AgentRunner:
     """Runs one user turn to completion, publishing progress as it goes."""
@@ -92,7 +99,8 @@ class AgentRunner:
 
         # Repair before appending the new message, so the placeholder outputs
         # land next to the calls they answer instead of behind the user's turn.
-        items = self._repair_history(self._store.load_items(conversation_id))
+        history = self._repair_history(self._store.load_items(conversation_id))
+        items = self._effective_history(history)
         items.append(user_item)
         self._store.append_items(conversation_id, [user_item])
         self._maybe_set_title(user_text)
@@ -127,6 +135,10 @@ class AgentRunner:
             if self.cancelled:
                 self._publish("cancelled", {})
                 return
+
+            compacted = self._maybe_compact_history()
+            if compacted is not None:
+                items = compacted
 
             exhausted = self._context_exhausted()
             if exhausted is not None:
@@ -183,6 +195,125 @@ class AgentRunner:
             live = None
         return live or context_window_for(self._conversation.model)
 
+    def _needs_compaction(self) -> bool:
+        used = self._conversation.context_tokens
+        return bool(
+            used
+            and used >= self._context_window() * self._config.context_compact_fraction
+        )
+
+    def _effective_history(self, history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Return the compact working history while preserving the transcript in SQLite."""
+        count = max(0, min(self._conversation.compacted_item_count, len(history)))
+        tail = history[count:]
+        summary = self._conversation.compaction_summary.strip()
+        if not summary:
+            return tail
+        return [
+            {
+                "role": "developer",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": "Working memory from earlier conversation:\n" + summary,
+                    }
+                ],
+            },
+            *tail,
+        ]
+
+    def _maybe_compact_history(self) -> list[dict[str, Any]] | None:
+        """Summarize older history before the input window becomes a hard stop.
+
+        The original items deliberately stay in the database for the UI. Only
+        the model's working set is replaced, and the summary is refreshed from
+        the previous summary plus the newly accumulated items on later passes.
+        """
+        if not self._needs_compaction():
+            return None
+
+        history = self._store.load_items(self._conversation.id)
+        already_compacted = max(
+            0, min(self._conversation.compacted_item_count, len(history))
+        )
+        uncompressed = history[already_compacted:]
+        keep = max(1, self._config.compaction_recent_items)
+        if len(uncompressed) <= keep:
+            return None
+
+        prefix = uncompressed[:-keep]
+        summary_input: list[dict[str, Any]] = []
+        if self._conversation.compaction_summary.strip():
+            summary_input.append(
+                {
+                    "role": "developer",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": "Earlier working memory:\n"
+                            + self._conversation.compaction_summary,
+                        }
+                    ],
+                }
+            )
+        summary_input.extend(prefix)
+
+        self._publish(
+            "compaction_started",
+            {"context_tokens": self._conversation.context_tokens},
+        )
+        try:
+            response = self._session.send_responses(
+                {
+                    "model": self._conversation.model,
+                    "instructions": COMPACTION_INSTRUCTIONS,
+                    "input": summary_input,
+                },
+                stream=False,
+            )
+            if not isinstance(response, dict):
+                raise RuntimeError("The compaction request did not return a response.")
+            summary = self._response_text(response)
+            if not summary:
+                raise RuntimeError("The compaction request returned no summary text.")
+            self._publish_usage(response.get("usage") or {})
+        except Exception as error:  # noqa: BLE001 - fall back to the hard stop safely
+            logger.warning("Could not compact conversation history", exc_info=True)
+            self._publish("compaction_failed", {"message": str(error)})
+            return None
+
+        compacted_count = len(history) - keep
+        self._store.save_compaction(self._conversation.id, summary, compacted_count)
+        self._conversation.compaction_summary = summary
+        self._conversation.compacted_item_count = compacted_count
+        self._conversation.context_tokens = 0
+        self._publish(
+            "compacted",
+            {"compacted_items": compacted_count, "kept_items": keep},
+        )
+        return self._effective_history(history)
+
+    @staticmethod
+    def _response_text(response: dict[str, Any]) -> str:
+        """Extract plain text from either common Responses output shape."""
+        direct = response.get("output_text")
+        if isinstance(direct, str) and direct.strip():
+            return direct.strip()
+        parts: list[str] = []
+        for item in response.get("output") or []:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content")
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                text = block.get("text") or block.get("value")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+        return "\n".join(parts)
+
     def _context_exhausted(self) -> str | None:
         """Return a message to stop on if the context window is nearly full.
 
@@ -197,9 +328,9 @@ class AgentRunner:
         if used < window * self._config.context_stop_fraction:
             return None
         return (
-            f"Stopping: this conversation has filled {used:,} of about "
-            f"{window:,} context tokens. Start a new chat to continue with a "
-            "fresh window."
+            f"Stopping: automatic context compaction could not free enough "
+            f"space after this conversation reached {used:,} of about "
+            f"{window:,} context tokens. Start a new chat to continue."
         )
 
     def _publish_usage(self, usage: dict[str, Any]) -> dict[str, Any]:

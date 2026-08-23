@@ -83,13 +83,14 @@ def _run_shell(args: dict[str, Any], ctx: ToolContext) -> str:
     timeout = int(args.get("timeout") or ctx.shell_timeout_seconds)
     timeout = max(1, min(timeout, 600))
 
-    # The gate. Raises PermissionDenied, which the loop reports to the model.
-    ctx.permissions.require_shell(command, ctx.task_prompt)
-
     started_in = ctx.cwd or ctx.workspace
     if not started_in.is_dir():  # the directory was removed since the last call
         started_in = ctx.workspace
         ctx.cwd = started_in
+
+    # The gate. A session allowance is bound to this exact command and the
+    # directory it starts in, rather than granting every future shell action.
+    ctx.permissions.require_shell(command, ctx.task_prompt, ctx.relative(started_in) or ".")
 
     try:
         completed = subprocess.run(  # noqa: S602 - running shell commands is this tool's purpose

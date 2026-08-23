@@ -631,6 +631,7 @@ button { cursor: pointer; }
 .account-detail { margin: 2px 0 14px; color: var(--text-dim); font-size: 13px; }
 
 .perm-kind { margin: 0 0 10px; color: var(--text-dim); font-size: 13px; }
+.perm-scope { margin: -4px 0 12px; color: var(--text-faint); font-size: 12px; }
 
 .perm-detail {
   margin: 0 0 12px;

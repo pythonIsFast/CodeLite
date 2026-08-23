@@ -37,6 +37,7 @@ const el = {
   permOverlay: $("permission-overlay"),
   permKind: $("perm-kind"),
   permDetail: $("perm-detail"),
+  permScope: $("perm-scope"),
   permDiff: $("perm-diff"),
   permJudge: $("perm-judge"),
   permJudgeReason: $("perm-judge-reason"),
@@ -912,6 +913,15 @@ function connectStream(conversationId) {
 
   on("plan_usage", (data) => updatePlanUsage(data));
 
+  on("compaction_started", () => setBusy(true, "Compacting earlier conversation…"));
+  on("compacted", (data) => {
+    setBusy(true);
+    toast(`Compacted earlier context; kept the latest ${data.kept_items} items.`);
+  });
+  on("compaction_failed", (data) => {
+    toast(`Could not compact context: ${data.message}`, true);
+  });
+
   on("todos", (data) => {
     const todos = data.todos || [];
     if (!todos.length) return;
@@ -1003,6 +1013,9 @@ function showNextPermission() {
       ? "The agent wants to run a shell command."
       : "The agent wants to write to a file.";
   el.permDetail.textContent = request.detail;
+  el.permScope.textContent = request.session_scope
+    ? `Session scope: ${request.session_scope}`
+    : "";
   renderDiff(request.diff);
   el.permJudge.hidden = !request.judge_reason;
   el.permJudgeReason.textContent = request.judge_reason || "";

@@ -69,6 +69,8 @@ MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("conversations", "context_tokens", "INTEGER NOT NULL DEFAULT 0"),
     ("conversations", "total_tokens", "INTEGER NOT NULL DEFAULT 0"),
     ("items", "meta", "TEXT NOT NULL DEFAULT '{}'"),
+    ("conversations", "compaction_summary", "TEXT NOT NULL DEFAULT ''"),
+    ("conversations", "compacted_item_count", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 
@@ -89,6 +91,9 @@ class Conversation:
     context_tokens: int = 0
     #: Cumulative tokens spent across every turn in this conversation.
     total_tokens: int = 0
+    #: A private working summary used by the agent; the full transcript stays in items.
+    compaction_summary: str = ""
+    compacted_item_count: int = 0
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Conversation":
@@ -105,6 +110,7 @@ class Conversation:
             "updated_at": self.updated_at,
             "context_tokens": self.context_tokens,
             "total_tokens": self.total_tokens,
+            "compacted_item_count": self.compacted_item_count,
         }
 
 
@@ -215,6 +221,18 @@ class Store:
                 "UPDATE conversations SET context_tokens = ?, "
                 "total_tokens = total_tokens + ? WHERE id = ?",
                 (int(context_tokens), int(spent_tokens), conversation_id),
+            )
+
+    def save_compaction(
+        self, conversation_id: str, summary: str, compacted_item_count: int
+    ) -> None:
+        """Persist a private summary while retaining the full UI transcript."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE conversations SET compaction_summary = ?, "
+                "compacted_item_count = ?, context_tokens = 0, updated_at = ? "
+                "WHERE id = ?",
+                (summary, int(compacted_item_count), _now(), conversation_id),
             )
 
     # -- app state -----------------------------------------------------------
