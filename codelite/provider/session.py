@@ -35,6 +35,7 @@ from .chat import (
     stream_responses_as_chat_completion_chunks,
 )
 from .config import ProviderConfig
+from .limits import RateLimits
 from .images import (
     ImageRequestError,
     prepare_image_edit_request,
@@ -59,10 +60,30 @@ class Session:
     def _resolve_auth(self) -> EffectiveAuth:
         return load_auth_tokens(self.config)
 
+    # -- plan usage ----------------------------------------------------------
+
+    @property
+    def rate_limits(self) -> RateLimits | None:
+        """How much of the ChatGPT plan's allowance is used, or ``None``.
+
+        Codex reports this only in the response headers of a real call, so
+        this stays ``None`` until at least one request has gone out.
+        """
+        return self._transport.rate_limits
+
     # -- models --------------------------------------------------------------
 
     def list_models(self) -> list[str]:
         return self._transport.list_model_ids()
+
+    def context_window(self, model: str) -> int | None:
+        """The model's context window in tokens, straight from Codex's catalog.
+
+        ``None`` when the catalog is unreachable or does not know the model --
+        callers should fall back rather than substitute a guess.
+        """
+        info = self._transport.resolve_model_info(model)
+        return info.context_window if info else None
 
     # -- responses -------------------------------------------------------------
 

@@ -33,7 +33,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-from ..config import AppConfig
+from ..config import AppConfig, context_window_for
 from ..db.store import Conversation, Store
 from ..permission.manager import PermissionDenied, PermissionManager
 from ..provider.session import Session
@@ -69,6 +69,7 @@ class AgentRunner:
         self._publish = publish
         self._config = config
         self._cancelled = threading.Event()
+        self._run_tokens_used = 0
 
     def cancel(self) -> None:
         """Ask the run to stop, and release anything blocked on a permission prompt."""
@@ -82,6 +83,7 @@ class AgentRunner:
     # -- entry point ---------------------------------------------------------
 
     def run(self, user_text: str) -> None:
+        self._run_tokens_used = 0
         conversation_id = self._conversation.id
         user_item = {
             "role": "user",
@@ -100,6 +102,7 @@ class AgentRunner:
             permissions=self._permissions,
             task_prompt=user_text,
             shell_timeout_seconds=self._config.shell_timeout_seconds,
+            publish=self._publish,
         )
 
         try:
@@ -109,9 +112,25 @@ class AgentRunner:
             self._publish("error", {"message": str(error)})
 
     def _loop(self, items: list[dict[str, Any]], context: ToolContext) -> None:
-        for step in range(1, self._config.max_agent_steps + 1):
+        """Run turns until the model stops calling tools.
+
+        There is no step ceiling on purpose -- a task needs however many turns
+        it needs, and cutting it off at an arbitrary number just abandons work
+        midway. What genuinely bounds a run is the context window, so that is
+        what we check. If the upstream reports no usage at all we cannot
+        measure it, and the run is instead bounded by the API rejecting an
+        over-long request, which surfaces through the normal error path.
+        """
+        step = 0
+        while True:
+            step += 1
             if self.cancelled:
                 self._publish("cancelled", {})
+                return
+
+            exhausted = self._context_exhausted()
+            if exhausted is not None:
+                self._publish("error", {"message": exhausted})
                 return
 
             self._publish("step", {"step": step})
@@ -123,10 +142,12 @@ class AgentRunner:
                 )
                 return
 
+            turn_meta = self._publish_usage(response.get("usage") or {})
+
             output_items = [i for i in (response.get("output") or []) if isinstance(i, dict)]
             if output_items:
                 items.extend(output_items)
-                self._store.append_items(self._conversation.id, output_items)
+                self._store.append_items(self._conversation.id, output_items, turn_meta)
 
             calls = [i for i in output_items if i.get("type") == "function_call"]
             if not calls:
@@ -148,15 +169,89 @@ class AgentRunner:
                 self._publish("cancelled", {})
                 return
 
+    def _context_window(self) -> int:
+        """This model's context window, preferring Codex's own catalog figure.
+
+        The catalog reports ``context_window`` per model, which beats a table
+        we maintain by hand. It is cached in the transport, so this is a dict
+        lookup after the first call; the static table only covers the case
+        where the catalog cannot be reached.
+        """
+        try:
+            live = self._session.context_window(self._conversation.model)
+        except Exception:  # noqa: BLE001 - never fail a run over a display figure
+            live = None
+        return live or context_window_for(self._conversation.model)
+
+    def _context_exhausted(self) -> str | None:
+        """Return a message to stop on if the context window is nearly full.
+
+        Returns ``None`` both when there is room left and when we have no
+        usage figures to judge by -- guessing would either cut a healthy run
+        short or invent a limit that is not there.
+        """
+        used = self._conversation.context_tokens
+        if not used:
+            return None
+        window = self._context_window()
+        if used < window * self._config.context_stop_fraction:
+            return None
+        return (
+            f"Stopping: this conversation has filled {used:,} of about "
+            f"{window:,} context tokens. Start a new chat to continue with a "
+            "fresh window."
+        )
+
+    def _publish_usage(self, usage: dict[str, Any]) -> dict[str, Any]:
+        """Report this turn's token cost, and persist it against the conversation.
+
+        ``context_window`` is an *input* budget (272000 = 400000 total less the
+        128000 reserved for output). We resend the whole history every turn, so
+        the next request's input is this turn's input plus this turn's output --
+        which is why those two are summed here. It is a projection of the next
+        call, not a measure of the last one, and that is the number worth
+        showing: it answers "will the next turn still fit".
+
+        Returns the metadata to store alongside this turn's items, so the UI
+        can show a per-message token count after a reload. Stays silent when
+        the upstream reports no usage at all -- publishing zeroes would render
+        as a real "0 tokens" reading, which is a lie about the request rather
+        than an absence of data.
+        """
+        input_tokens = usage.get("input_tokens")
+        output_tokens = usage.get("output_tokens")
+        turn_total = usage.get("total_tokens")
+        if not isinstance(turn_total, int):
+            if not isinstance(input_tokens, int) or not isinstance(output_tokens, int):
+                return {}
+            turn_total = input_tokens + output_tokens
+
+        self._run_tokens_used += turn_total
+        context_tokens = (
+            input_tokens + output_tokens
+            if isinstance(input_tokens, int) and isinstance(output_tokens, int)
+            else None
+        )
+        window = self._context_window()
+
+        if context_tokens is not None:
+            self._conversation.context_tokens = context_tokens
+        self._conversation.total_tokens += turn_total
+        self._store.record_usage(
+            self._conversation.id, self._conversation.context_tokens, turn_total
+        )
+
         self._publish(
-            "error",
+            "usage",
             {
-                "message": (
-                    f"Stopped after {self._config.max_agent_steps} steps without "
-                    "finishing. Send another message to continue."
-                )
+                "run_tokens": self._run_tokens_used,
+                "turn_tokens": turn_total,
+                "total_tokens": self._conversation.total_tokens,
+                "context_tokens": context_tokens,
+                "context_window": window,
             },
         )
+        return {"tokens": turn_total, "context_tokens": context_tokens}
 
     # -- model turn ------------------------------------------------------------
 

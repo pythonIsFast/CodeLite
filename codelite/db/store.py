@@ -55,7 +55,21 @@ CREATE TABLE IF NOT EXISTS items (
 );
 
 CREATE INDEX IF NOT EXISTS idx_items_conversation ON items(conversation_id, id);
+
+CREATE TABLE IF NOT EXISTS app_state (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 """
+
+#: Columns added after the first release. Applied with ALTER TABLE on open, so
+#: an existing database keeps working instead of needing to be thrown away.
+MIGRATIONS: tuple[tuple[str, str, str], ...] = (
+    ("conversations", "context_tokens", "INTEGER NOT NULL DEFAULT 0"),
+    ("conversations", "total_tokens", "INTEGER NOT NULL DEFAULT 0"),
+    ("items", "meta", "TEXT NOT NULL DEFAULT '{}'"),
+)
 
 
 def _now() -> str:
@@ -71,6 +85,10 @@ class Conversation:
     permission_mode: str
     created_at: str
     updated_at: str
+    #: Tokens the last turn actually sent as context -- what the UI's ring shows.
+    context_tokens: int = 0
+    #: Cumulative tokens spent across every turn in this conversation.
+    total_tokens: int = 0
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Conversation":
@@ -85,7 +103,19 @@ class Conversation:
             "permission_mode": self.permission_mode,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "context_tokens": self.context_tokens,
+            "total_tokens": self.total_tokens,
         }
+
+
+def _apply_migrations(conn: sqlite3.Connection) -> None:
+    """Add any columns a database created by an older version is missing."""
+    for table, column, definition in MIGRATIONS:
+        existing = {
+            row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
 class Store:
@@ -98,6 +128,7 @@ class Store:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA foreign_keys=ON")
             conn.executescript(SCHEMA)
+            _apply_migrations(conn)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -170,16 +201,66 @@ class Store:
         with self._connect() as conn:
             conn.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
 
+    def record_usage(
+        self, conversation_id: str, context_tokens: int, spent_tokens: int
+    ) -> None:
+        """Store the latest context size and add to the running total.
+
+        ``context_tokens`` is replaced (it describes the current history size,
+        which does not accumulate) while ``spent_tokens`` is added to the
+        total, so the conversation keeps a truthful lifetime cost.
+        """
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE conversations SET context_tokens = ?, "
+                "total_tokens = total_tokens + ? WHERE id = ?",
+                (int(context_tokens), int(spent_tokens), conversation_id),
+            )
+
+    # -- app state -----------------------------------------------------------
+
+    def set_state(self, key: str, value: Any) -> None:
+        """Persist a small JSON-serialisable value under ``key``."""
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO app_state (key, value, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+                "updated_at = excluded.updated_at",
+                (key, json.dumps(value), _now()),
+            )
+
+    def get_state(self, key: str) -> Any | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT value FROM app_state WHERE key = ?", (key,)
+            ).fetchone()
+        if not row:
+            return None
+        try:
+            return json.loads(row["value"])
+        except ValueError:
+            return None
+
     # -- items ---------------------------------------------------------------
 
-    def append_items(self, conversation_id: str, items: list[dict[str, Any]]) -> None:
+    def append_items(
+        self,
+        conversation_id: str,
+        items: list[dict[str, Any]],
+        meta: dict[str, Any] | None = None,
+    ) -> None:
         if not items:
             return
         timestamp = _now()
+        encoded_meta = json.dumps(meta or {})
         with self._connect() as conn:
             conn.executemany(
-                "INSERT INTO items (conversation_id, payload, created_at) VALUES (?, ?, ?)",
-                [(conversation_id, json.dumps(item), timestamp) for item in items],
+                "INSERT INTO items (conversation_id, payload, created_at, meta) "
+                "VALUES (?, ?, ?, ?)",
+                [
+                    (conversation_id, json.dumps(item), timestamp, encoded_meta)
+                    for item in items
+                ],
             )
             conn.execute(
                 "UPDATE conversations SET updated_at = ? WHERE id = ?",
@@ -187,18 +268,35 @@ class Store:
             )
 
     def load_items(self, conversation_id: str) -> list[dict[str, Any]]:
+        """Just the payloads -- what the model gets sent as ``input``."""
+        return [entry["payload"] for entry in self.load_entries(conversation_id)]
+
+    def load_entries(self, conversation_id: str) -> list[dict[str, Any]]:
+        """Payloads plus their stored timestamp and metadata, for the UI."""
         with self._connect() as conn:
             rows = conn.execute(
-                "SELECT payload FROM items WHERE conversation_id = ? ORDER BY id",
+                "SELECT payload, created_at, meta FROM items "
+                "WHERE conversation_id = ? ORDER BY id",
                 (conversation_id,),
             ).fetchall()
-        items: list[dict[str, Any]] = []
+        entries: list[dict[str, Any]] = []
         for row in rows:
             try:
-                items.append(json.loads(row["payload"]))
+                payload = json.loads(row["payload"])
             except ValueError:
                 continue  # Skip a corrupt row rather than breaking the whole load.
-        return items
+            try:
+                meta = json.loads(row["meta"]) if row["meta"] else {}
+            except ValueError:
+                meta = {}
+            entries.append(
+                {
+                    "payload": payload,
+                    "created_at": row["created_at"],
+                    "meta": meta if isinstance(meta, dict) else {},
+                }
+            )
+        return entries
 
     def count_items(self, conversation_id: str) -> int:
         with self._connect() as conn:

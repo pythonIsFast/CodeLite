@@ -21,6 +21,7 @@ before touching disk.
 
 from __future__ import annotations
 
+import difflib
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,11 @@ from .context import ToolContext
 
 MAX_READ_BYTES = 400_000
 DEFAULT_READ_LIMIT = 2_000
+
+#: A diff longer than this is truncated before going to the approval dialog --
+#: nobody reviews 3000 lines in a modal, and the payload has to cross an SSE
+#: frame.
+MAX_DIFF_LINES = 400
 
 #: Directories that are noise for a coding agent and would drown real results.
 IGNORED_DIRS = frozenset(
@@ -86,6 +92,30 @@ def _run_read_file(args: dict[str, Any], ctx: ToolContext) -> str:
     return f"{header}\n{body}{footer}"
 
 
+def _build_diff(label: str, before: str, after: str) -> str:
+    """Unified diff of a pending change, for the approval dialog.
+
+    Returns "" when nothing would change, so callers can tell a no-op apart
+    from a diff they simply failed to render.
+    """
+    lines = list(
+        difflib.unified_diff(
+            before.splitlines(keepends=True),
+            after.splitlines(keepends=True),
+            fromfile=f"a/{label}",
+            tofile=f"b/{label}",
+            n=3,
+        )
+    )
+    if not lines:
+        return ""
+    if len(lines) > MAX_DIFF_LINES:
+        kept = lines[:MAX_DIFF_LINES]
+        kept.append(f"\n... [diff truncated, {len(lines) - MAX_DIFF_LINES} more lines]\n")
+        lines = kept
+    return "".join(lines)
+
+
 def _run_write_file(args: dict[str, Any], ctx: ToolContext) -> str:
     path = ctx.resolve(args.get("path", ""))
     content = args.get("content")
@@ -93,12 +123,20 @@ def _run_write_file(args: dict[str, Any], ctx: ToolContext) -> str:
         raise ToolError("`content` is required.")
 
     existed = path.exists()
-    ctx.permissions.require_write(ctx.relative(path))
+    label = ctx.relative(path)
+    # Read the old version only to show the user what changes; a file we
+    # cannot decode still gets written, it just gets no diff.
+    try:
+        before = path.read_text(encoding="utf-8") if existed else ""
+    except (OSError, UnicodeDecodeError):
+        before = ""
+    diff = _build_diff(label, before, str(content))
+    ctx.permissions.require_write(label, diff)
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(str(content), encoding="utf-8")
     verb = "Overwrote" if existed else "Created"
-    line_count = str(content).count("\n") + 1
+    line_count = len(str(content).splitlines())
     return f"{verb} {ctx.relative(path)} ({line_count} lines)."
 
 
@@ -129,8 +167,10 @@ def _run_edit_file(args: dict[str, Any], ctx: ToolContext) -> str:
             "`replace_all` to true."
         )
 
-    ctx.permissions.require_write(ctx.relative(path))
     updated = original.replace(old, str(new)) if replace_all else original.replace(old, str(new), 1)
+    ctx.permissions.require_write(
+        ctx.relative(path), _build_diff(ctx.relative(path), original, updated)
+    )
     path.write_text(updated, encoding="utf-8")
     changed = occurrences if replace_all else 1
     return f"Edited {ctx.relative(path)} ({changed} replacement{'s' if changed != 1 else ''})."

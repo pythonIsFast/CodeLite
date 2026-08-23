@@ -42,6 +42,9 @@ logger = logging.getLogger(__name__)
 #: How long an idle SSE stream waits before emitting a keepalive comment.
 KEEPALIVE_SECONDS = 15.0
 
+#: Where the last plan-usage snapshot is cached in the store.
+PLAN_USAGE_KEY = "plan_usage"
+
 
 class RunInProgress(Exception):
     """Raised when a second message arrives while a run is still going."""
@@ -192,13 +195,49 @@ class Runtime:
             )
             state.runner = runner
             thread = threading.Thread(
-                target=runner.run,
-                args=(user_text,),
+                target=self._run_and_report,
+                args=(runner, user_text, conversation.id),
                 name=f"codelite-run-{conversation.id[:8]}",
                 daemon=True,
             )
             state.thread = thread
             thread.start()
+
+    def _run_and_report(self, runner: AgentRunner, user_text: str, cid: str) -> None:
+        """Run a turn, then publish the plan usage the request just revealed."""
+        try:
+            runner.run(user_text)
+        finally:
+            self.refresh_plan_usage(publish_to=cid)
+
+    # -- plan usage ------------------------------------------------------------
+
+    def refresh_plan_usage(self, publish_to: str | None = None) -> dict[str, Any] | None:
+        """Persist the newest plan-usage snapshot and optionally announce it.
+
+        Codex only reports this in the headers of a real request, so the
+        snapshot is written to the database to survive a restart -- otherwise
+        the indicator would sit empty until the user happened to send a
+        message.
+        """
+        limits = self.session.rate_limits
+        if limits is None:
+            return None
+        payload = limits.as_dict()
+        try:
+            self.store.set_state(PLAN_USAGE_KEY, payload)
+        except Exception:  # noqa: BLE001 - a telemetry write must not break a run
+            logger.warning("Could not persist plan usage", exc_info=True)
+        if publish_to:
+            self.publish(publish_to, "plan_usage", payload)
+        return payload
+
+    def plan_usage(self) -> dict[str, Any] | None:
+        """Latest known plan usage: live if we have it, else the stored copy."""
+        limits = self.session.rate_limits
+        if limits is not None:
+            return limits.as_dict()
+        return self.store.get_state(PLAN_USAGE_KEY)
 
     def cancel_run(self, conversation_id: str) -> bool:
         with self._lock:

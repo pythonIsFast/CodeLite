@@ -78,6 +78,8 @@ class PendingRequest:
     detail: str
     #: Set when a judge model denied the action and we escalated to the user.
     judge_reason: str = ""
+    #: Unified diff of the pending change, for write requests.
+    diff: str = ""
     created_at: str = field(
         default_factory=lambda: datetime.now(tz=timezone.utc).isoformat()
     )
@@ -91,6 +93,7 @@ class PendingRequest:
             "kind": self.kind,
             "detail": self.detail,
             "judge_reason": self.judge_reason,
+            "diff": self.diff,
             "created_at": self.created_at,
         }
 
@@ -125,9 +128,13 @@ class PermissionManager:
 
     # -- gates ---------------------------------------------------------------
 
-    def require_write(self, path: str) -> None:
-        """Gate a file write. Raises :class:`PermissionDenied` if refused."""
-        decision = self._decide_write(path)
+    def require_write(self, path: str, diff: str = "") -> None:
+        """Gate a file write. Raises :class:`PermissionDenied` if refused.
+
+        ``diff`` is shown to the user so they approve a change rather than a
+        bare filename -- without it the dialog asks them to trust a path.
+        """
+        decision = self._decide_write(path, diff)
         if not decision.allowed:
             raise PermissionDenied(
                 decision.reason or f"Permission to write {path} was denied by the user."
@@ -142,13 +149,13 @@ class PermissionManager:
                 or f"Permission to run `{command}` was denied by the user."
             )
 
-    def _decide_write(self, path: str) -> Decision:
+    def _decide_write(self, path: str, diff: str = "") -> Decision:
         mode = self.mode
         if not mode.writes_need_approval:
             return Decision(allowed=True, reason=f"{mode.label} mode", source="mode")
         if self._has_session_grant("write"):
             return Decision(allowed=True, reason="Approved for this session", source="session")
-        return self._ask_user("write", path)
+        return self._ask_user("write", path, diff=diff)
 
     def _decide_shell(self, command: str, task_prompt: str) -> Decision:
         mode = self.mode
@@ -184,9 +191,15 @@ class PermissionManager:
 
     # -- user round-trip -------------------------------------------------------
 
-    def _ask_user(self, kind: Kind, detail: str, judge_reason: str = "") -> Decision:
+    def _ask_user(
+        self, kind: Kind, detail: str, judge_reason: str = "", diff: str = ""
+    ) -> Decision:
         request = PendingRequest(
-            id=uuid.uuid4().hex, kind=kind, detail=detail, judge_reason=judge_reason
+            id=uuid.uuid4().hex,
+            kind=kind,
+            detail=detail,
+            judge_reason=judge_reason,
+            diff=diff,
         )
         with self._lock:
             self._pending[request.id] = request

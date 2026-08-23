@@ -37,6 +37,7 @@ from typing import Any, Callable, Iterator
 from .auth import EffectiveAuth
 from .config import ProviderConfig
 from .models import CodexModelInfo, fetch_codex_model_catalog, is_public_codex_model
+from .limits import RateLimits, parse_rate_limits
 from .sse import collect_completed_response_from_sse
 
 USER_AGENT = "codelite-provider/0.1 (+https://github.com/; provider layer)"
@@ -61,6 +62,22 @@ class CodexTransport:
         self._config = config
         self._get_auth = get_auth
         self._model_cache: dict[str, tuple[float, list[CodexModelInfo], Exception | None]] = {}
+        #: Latest plan-usage snapshot seen on a response. There is no endpoint
+        #: to ask for this -- it only ever arrives piggybacked on a real call.
+        self._rate_limits: RateLimits | None = None
+
+    @property
+    def rate_limits(self) -> RateLimits | None:
+        """The most recent plan-usage snapshot, or ``None`` before the first call."""
+        return self._rate_limits
+
+    def _capture_rate_limits(self, headers: Any) -> None:
+        try:
+            parsed = parse_rate_limits(dict(headers or {}))
+        except Exception:  # noqa: BLE001 - telemetry must never break a request
+            return
+        if parsed is not None:
+            self._rate_limits = parsed
 
     # -- low-level request -----------------------------------------------------
 
@@ -99,6 +116,9 @@ class CodexTransport:
         try:
             response = urllib.request.urlopen(request, timeout=120.0)
         except urllib.error.HTTPError as error:
+            # A 429 carries the most interesting usage numbers of all, so read
+            # the headers off failures too, not just successes.
+            self._capture_rate_limits(error.headers)
             if stream:
                 return error
             body_bytes = error.read()
@@ -108,6 +128,7 @@ class CodexTransport:
         except urllib.error.URLError as error:
             raise UpstreamError(f"Request to Codex failed: {error.reason}") from error
 
+        self._capture_rate_limits(response.headers)
         if stream:
             return response
         with response:

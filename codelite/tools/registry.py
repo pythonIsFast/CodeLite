@@ -26,6 +26,7 @@ from .base import Tool
 from .files import EDIT_FILE, LIST_DIR, READ_FILE, WRITE_FILE
 from .search import FIND_FILES, GREP
 from .shell import SHELL
+from .todo import TODO_WRITE
 
 TOOLS: tuple[Tool, ...] = (
     READ_FILE,
@@ -35,6 +36,7 @@ TOOLS: tuple[Tool, ...] = (
     GREP,
     FIND_FILES,
     SHELL,
+    TODO_WRITE,
 )
 
 _BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}

@@ -4,9 +4,10 @@ A lightweight, resource-efficient coding agent — built to stay small on disk
 and dependencies while doing the job of heavier tools.
 
 Code Lite runs on your existing **ChatGPT** subscription instead of API
-credits, by reusing the OAuth tokens the official
-[Codex CLI](https://github.com/openai/codex) already stores at
-`~/.codex/auth.json`. It opens in a **native window** (the OS's own webview —
+credits. It signs you in directly and stores its OAuth tokens at
+`~/.codex/auth.json`, while remaining compatible with tokens created by the
+official [Codex CLI](https://github.com/openai/codex). It opens in a
+**native window** (the OS's own webview —
 no bundled Chromium, no Electron), talks to your files and shell through a
 small set of tools, and gates risky actions behind a permission system you
 control.
@@ -37,9 +38,11 @@ python3 run.py
 `run.py` works from any directory. (`python3 -m codelite` does the same thing,
 but only from the project root.)
 
-You need ChatGPT/Codex OAuth tokens already on disk — run `codex login` once
-with the official Codex CLI if you haven't. Code Lite refreshes those tokens
-itself but does not implement the interactive login flow.
+On first launch, choose **Sign in with ChatGPT**. Code Lite opens the ChatGPT
+login in your browser, receives the local OAuth callback, and stores the tokens
+in the same `~/.codex/auth.json` format as the official Codex CLI. If that file
+already contains Codex tokens, Code Lite uses them immediately. You can switch
+accounts later from Settings.
 
 Useful flags:
 
@@ -84,32 +87,46 @@ You can switch modes mid-conversation from the window's header, and grant
 ## Tools
 
 `read_file`, `write_file`, `edit_file`, `list_dir`, `grep`, `find_files`,
-`shell`.
+`shell`, `todo_write`.
 
 Search is implemented in pure Python rather than shelling out to
 `grep`/`ripgrep`, so it needs no permission prompt and behaves the same on
 every machine. Every path the model supplies is resolved against the
 conversation's workspace and rejected if it escapes it.
 
+`todo_write` is how the agent records a multi-step plan; the list is rendered
+in the conversation, so "what is it doing and how far along is it" has a real
+answer instead of a spinner.
+
 ## What works
 
 - **Token refresh** — reads `~/.codex/auth.json` (or `$CODEX_HOME`), refreshes
   the access token when it nears expiry, writes it straight back.
 - **Streaming agent loop** — model turn → tool calls → results → repeat, with
-  text, tool calls and results streaming into the window live.
+  text, tool calls and results streaming into the window live. There is no
+  turn limit: a run ends when the model stops calling tools, when you stop it,
+  or when the context window is nearly full.
 - **Four permission modes**, including the judge-model path described above.
+  Write approvals show a unified diff of the pending change, not just a path.
 - **Persistence** — conversations and full history in SQLite, so restarting
-  the app doesn't lose anything.
+  the app doesn't lose anything. Token usage is stored per conversation, so
+  the context ring reflects the chat's real size the moment you open it.
+- **Plan usage** — how much of your weekly ChatGPT allowance is gone, read
+  from the `x-codex-*` response headers Codex attaches to every `/responses`
+  call. There is no endpoint for this, so the figure only refreshes when a
+  request goes out; the last one is cached in SQLite to survive a restart.
 - **OpenAI-compatible endpoints** via the provider layer:
   `/v1/chat/completions`, `/v1/responses`, `/v1/models`,
   `/v1/images/generations`, `/v1/images/edits`.
 
 ## Known limitations
 
-- **No interactive login.** Only token *refresh* is implemented; sign in with
-  `codex login` first.
-- **Shell commands are one-shot.** Each `shell` call is a fresh process, so
-  `cd` doesn't persist between calls — chain with `&&` when order matters.
+- **Shell commands are separate processes.** The working directory carries
+  over between calls, but nothing else does — no environment variables, no
+  shell functions, no background jobs.
+- **Context-window sizes come from Codex's own catalog** (`context_window`
+  per model). `codelite/config.py` carries a static table as an offline
+  fallback only, so the percentage is real unless the catalog is unreachable.
 - **"Allow for session" is coarse.** It grants the whole category (all writes,
   or all shell commands) for the rest of the conversation, not a specific
   path or command pattern.
@@ -132,9 +149,9 @@ conversation's workspace and rejected if it escapes it.
 ```
 run.py            start the app from anywhere
 codelite/
-  provider/       stdlib-only: OAuth, Codex transport, SSE, images, proxy
+  provider/       stdlib-only: OAuth, Codex transport, SSE, images, limits, proxy
   agent/          loop.py, system_prompt.py, judge.py
-  tools/          base, context, files, search, shell, registry
+  tools/          base, context, files, search, shell, todo, registry
   permission/     modes.py (the four modes), manager.py (the gate)
   db/             SQLite store; history is stored as Responses-API items
   app/            runtime.py (live state), server.py (Flask), window.py,

@@ -27,6 +27,9 @@ import logging
 import socket
 import threading
 import time
+import urllib.parse
+import webbrowser
+from pathlib import Path
 
 from ..config import (
     WINDOW_HEIGHT,
@@ -81,6 +84,28 @@ def _wait_for_port(host: str, port: int) -> None:
     )
 
 
+class JsApi:
+    """Exposed to the page as ``window.pywebview.api`` -- the one bit of native
+    OS integration the page needs (a real folder picker instead of a typed
+    path), kept to a single method on purpose."""
+
+    def choose_directory(self, start: str | None = None) -> str | None:
+        import webview  # noqa: PLC0415 - only reachable once pywebview is running
+
+        initial = start if start and Path(start).is_dir() else str(Path.home())
+        result = webview.windows[0].create_file_dialog(
+            webview.FOLDER_DIALOG, directory=initial
+        )
+        return result[0] if result else None
+
+    def open_external(self, url: str) -> bool:
+        """Open OAuth in the real browser, outside the embedded app window."""
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme != "https" or parsed.hostname != "auth.openai.com":
+            raise ValueError("Only the ChatGPT login URL may be opened externally.")
+        return webbrowser.open(url, new=1)
+
+
 def run(config: AppConfig | None = None, headless: bool = False) -> None:
     """Serve the app, and (unless ``headless``) open the native window."""
     config = config or AppConfig()
@@ -110,6 +135,7 @@ def run(config: AppConfig | None = None, headless: bool = False) -> None:
         width=WINDOW_WIDTH,
         height=WINDOW_HEIGHT,
         min_size=(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT),
+        js_api=JsApi(),
     )
     webview.start()
 

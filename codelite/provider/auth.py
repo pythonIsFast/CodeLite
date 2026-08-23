@@ -16,14 +16,12 @@
 # packages/core/src/runtime.ts (JWT/refresh helpers) and
 # packages/local/src/auth-file.ts (auth.json load/save/refresh), Apache-2.0.
 
-"""Loads, refreshes, and persists ChatGPT/Codex OAuth tokens.
+"""Creates, loads, refreshes, and persists ChatGPT/Codex OAuth tokens.
 
 Tokens live in ``~/.codex/auth.json`` (the same file the official Codex CLI
 uses), so anyone who has already run ``codex login`` can use Code Lite
-without a separate login step. This module only ever *refreshes* existing
-tokens via the OAuth ``refresh_token`` grant -- it does not implement the
-interactive authorization-code login flow (out of scope for this build
-stage; see the README).
+without a separate login step. Code Lite can also create the same token file
+itself through the OAuth authorization-code flow with PKCE.
 
 Security note: token values are never logged. Helpers here only ever report
 presence/length for diagnostics, never the token text itself.
@@ -32,9 +30,12 @@ presence/length for diagnostics, never the token text itself.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
+import secrets
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -50,6 +51,27 @@ from .config import (
 
 class AuthError(RuntimeError):
     """Raised when tokens cannot be loaded, refreshed, or are missing."""
+
+
+@dataclass
+class OAuthRequest:
+    """The public URL and private verifier for one PKCE login attempt."""
+
+    authorization_url: str
+    state: str
+    code_verifier: str
+    redirect_uri: str
+
+
+@dataclass
+class AuthStatus:
+    """Secret-free account state suitable for the local UI."""
+
+    authenticated: bool
+    account_label: str | None = None
+    email: str | None = None
+    source_path: Path | None = None
+    error: str | None = None
 
 
 # -- JWT helpers --------------------------------------------------------------
@@ -130,13 +152,24 @@ def _resolve_token_url(issuer: str, token_url: str | None) -> str:
     return token_url or f"{issuer.rstrip('/')}/oauth/token"
 
 
-def _post_json(url: str, payload: dict[str, Any], timeout: float = 30.0) -> dict[str, Any]:
-    body = json.dumps(payload).encode("utf-8")
+def _request_token_payload(
+    url: str,
+    payload: dict[str, str],
+    *,
+    form_encoded: bool,
+    timeout: float = 30.0,
+) -> dict[str, Any]:
+    if form_encoded:
+        body = urllib.parse.urlencode(payload).encode("utf-8")
+        content_type = "application/x-www-form-urlencoded"
+    else:
+        body = json.dumps(payload).encode("utf-8")
+        content_type = "application/json"
     request = urllib.request.Request(
         url,
         data=body,
         method="POST",
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        headers={"Content-Type": content_type, "Accept": "application/json"},
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -163,9 +196,17 @@ def _post_json(url: str, payload: dict[str, Any], timeout: float = 30.0) -> dict
         raise AuthError(f"OpenAI OAuth token request failed: {error.reason}") from error
 
     try:
-        return json.loads(raw_body)
+        parsed = json.loads(raw_body)
     except ValueError as error:
         raise AuthError("OpenAI OAuth token response was not valid JSON.") from error
+    if not isinstance(parsed, dict):
+        raise AuthError("OpenAI OAuth token response must be a JSON object.")
+    return parsed
+
+
+def _post_json(url: str, payload: dict[str, Any], timeout: float = 30.0) -> dict[str, Any]:
+    strings = {key: str(value) for key, value in payload.items()}
+    return _request_token_payload(url, strings, form_encoded=False, timeout=timeout)
 
 
 def _to_token_response(payload: dict[str, Any]) -> TokenResponse:
@@ -210,6 +251,64 @@ def refresh_oauth_tokens(
     return _to_token_response(payload)
 
 
+def create_oauth_request(
+    *,
+    redirect_uri: str,
+    client_id: str,
+    issuer: str,
+    scope: str,
+) -> OAuthRequest:
+    """Create the ChatGPT authorization URL and its PKCE verifier."""
+    state = secrets.token_urlsafe(24)
+    code_verifier = secrets.token_urlsafe(48)
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode("ascii")).digest()
+    ).rstrip(b"=").decode("ascii")
+    query = urllib.parse.urlencode(
+        {
+            "response_type": "code",
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "scope": scope,
+            "state": state,
+            "code_challenge": challenge,
+            "code_challenge_method": "S256",
+            "id_token_add_organizations": "true",
+            "codex_cli_simplified_flow": "true",
+        }
+    )
+    return OAuthRequest(
+        authorization_url=f"{issuer.rstrip('/')}/oauth/authorize?{query}",
+        state=state,
+        code_verifier=code_verifier,
+        redirect_uri=redirect_uri,
+    )
+
+
+def exchange_oauth_code(
+    code: str,
+    code_verifier: str,
+    redirect_uri: str,
+    *,
+    client_id: str,
+    issuer: str,
+    token_url: str | None = None,
+) -> TokenResponse:
+    """Exchange the local callback's authorization code for Codex tokens."""
+    payload = _request_token_payload(
+        _resolve_token_url(issuer, token_url),
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": client_id,
+            "code_verifier": code_verifier,
+        },
+        form_encoded=True,
+    )
+    return _to_token_response(payload)
+
+
 # -- auth.json load / refresh / persist -----------------------------------------
 
 
@@ -246,6 +345,70 @@ def _write_auth_file(path: Path, data: dict[str, Any]) -> None:
         json.dump(data, handle, indent=2)
     os.chmod(tmp_path, 0o600)
     tmp_path.replace(path)
+
+
+def save_auth_tokens(
+    config: ProviderConfig,
+    token: TokenResponse,
+    *,
+    now: datetime | None = None,
+) -> EffectiveAuth:
+    """Atomically save a successful login without discarding unrelated fields."""
+    account_id = token.account_id or derive_account_id(token.id_token)
+    if not account_id:
+        raise AuthError("ChatGPT account id not found in OpenAI OAuth token response.")
+    moment = now or datetime.now(tz=timezone.utc)
+    path = config.auth_file_path
+    existing = _read_auth_file(path)
+    last_refresh = moment.isoformat()
+    _write_auth_file(
+        path,
+        {
+            **existing,
+            "auth_mode": "chatgpt",
+            "tokens": {
+                "id_token": token.id_token,
+                "access_token": token.access_token,
+                "refresh_token": token.refresh_token,
+                "account_id": account_id,
+            },
+            "last_refresh": last_refresh,
+        },
+    )
+    return EffectiveAuth(
+        access_token=token.access_token,
+        account_id=account_id,
+        is_fedramp=token.is_fedramp,
+        id_token=token.id_token,
+        refresh_token=token.refresh_token,
+        source_path=path,
+        last_refresh=last_refresh,
+    )
+
+
+def get_auth_status(config: ProviderConfig) -> AuthStatus:
+    """Inspect the local token file without refreshing or revealing secrets."""
+    path = config.auth_file_path
+    try:
+        data = _read_auth_file(path)
+    except AuthError as error:
+        return AuthStatus(False, source_path=path, error=str(error))
+    tokens = data.get("tokens") if isinstance(data.get("tokens"), dict) else {}
+    access_token = tokens.get("access_token")
+    id_token = tokens.get("id_token")
+    account_id = tokens.get("account_id") or derive_account_id(id_token)
+    if not isinstance(access_token, str) or not access_token or not account_id:
+        return AuthStatus(False, source_path=path)
+
+    claims = parse_jwt_claims(id_token) or parse_jwt_claims(access_token) or {}
+    email = claims.get("email") if isinstance(claims.get("email"), str) else None
+    name = claims.get("name") if isinstance(claims.get("name"), str) else None
+    return AuthStatus(
+        True,
+        account_label=name or email or "ChatGPT account",
+        email=email,
+        source_path=path,
+    )
 
 
 def _parse_iso(value: str | None) -> datetime | None:

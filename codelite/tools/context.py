@@ -16,8 +16,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, Callable
 
 from ..permission.manager import PermissionManager
 
@@ -34,12 +35,42 @@ class ToolContext:
     carried here because the judge model in ``auto`` mode is shown both the
     shell command *and* the task it is supposedly serving -- a command that
     looks fine in isolation may be obviously unrelated to the task.
+
+    ``cwd`` is mutable: the shell tool writes back where the command left the
+    working directory, so ``cd`` carries between calls the way it would in a
+    real terminal.
     """
 
     workspace: Path
     permissions: PermissionManager
     task_prompt: str = ""
     shell_timeout_seconds: int = 120
+    cwd: Path | None = None
+    todos: list[dict[str, str]] = field(default_factory=list)
+    publish: Callable[[str, dict[str, Any]], None] | None = None
+
+    def __post_init__(self) -> None:
+        if self.cwd is None:
+            self.cwd = self.workspace
+
+    def emit(self, event: str, data: dict[str, Any]) -> None:
+        """Send a UI event, if this run has somewhere to send it."""
+        if self.publish is not None:
+            self.publish(event, data)
+
+    def set_cwd(self, path: Path) -> bool:
+        """Adopt a new working directory, ignoring anything outside the workspace."""
+        try:
+            resolved = path.resolve()
+        except OSError:
+            return False
+        workspace = self.workspace.resolve()
+        if resolved != workspace and workspace not in resolved.parents:
+            return False
+        if not resolved.is_dir():
+            return False
+        self.cwd = resolved
+        return True
 
     def resolve(self, raw_path: str) -> Path:
         """Resolve a model-supplied path, refusing anything outside the workspace.

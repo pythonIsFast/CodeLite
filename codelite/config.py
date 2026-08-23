@@ -42,7 +42,35 @@ WINDOW_MIN_HEIGHT = 520
 
 SHELL_TIMEOUT_SECONDS = 120
 MAX_TOOL_OUTPUT_CHARS = 30_000
-MAX_AGENT_STEPS = 40
+
+#: There is deliberately no step cap: a task takes as many turns as it takes,
+#: and an arbitrary ceiling just abandons work halfway. The context window is
+#: the real budget, so a run stops when it has nearly filled it.
+#:
+#: 0.95 is not arbitrary -- it is the same headroom the official Codex CLI
+#: keeps before it compacts (0.95 of the 272000 input budget, so ~258400).
+CONTEXT_STOP_FRACTION = 0.95
+
+# Offline fallback only. Codex's /models catalog does report each model's real
+# `context_window`, and that is what the app prefers -- see
+# `Session.context_window`. These are the figures the catalog returned on
+# 2026-08-23, kept so the indicator still works when the catalog is
+# unreachable. Unlisted models fall back to DEFAULT_CONTEXT_WINDOW.
+DEFAULT_CONTEXT_WINDOW = 272_000
+CONTEXT_WINDOWS: dict[str, int] = {
+    "gpt-5.6-sol": 272_000,
+    "gpt-5.6-terra": 272_000,
+    "gpt-5.6-luna": 272_000,
+    "gpt-5.5": 272_000,
+    "gpt-5.4": 272_000,
+    "gpt-5.4-mini": 272_000,
+    "codex-auto-review": 272_000,
+}
+
+
+def context_window_for(model: str) -> int:
+    """Fallback window size. Prefer ``Session.context_window`` for live data."""
+    return CONTEXT_WINDOWS.get(model, DEFAULT_CONTEXT_WINDOW)
 
 
 def default_data_dir() -> Path:
@@ -64,7 +92,7 @@ class AppConfig:
     default_permission_mode: Mode = Mode.ASK
     shell_timeout_seconds: int = SHELL_TIMEOUT_SECONDS
     max_tool_output_chars: int = MAX_TOOL_OUTPUT_CHARS
-    max_agent_steps: int = MAX_AGENT_STEPS
+    context_stop_fraction: float = CONTEXT_STOP_FRACTION
 
     def __post_init__(self) -> None:
         self.data_dir = Path(self.data_dir)

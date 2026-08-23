@@ -1,0 +1,16 @@
+<!--
+  Copyright 2026 Code Lite contributors
+  Licensed under the Apache License, Version 2.0.
+
+  The Code Lite mark: a prompt chevron over a caret line, on the app's
+  terracotta. Hand-drawn geometry rather than a generated bitmap, so it stays
+  a couple of KB and rasterises crisply at any size.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="114" fill="#da7756"/>
+  <g fill="none" stroke="#faf9f6" stroke-width="42"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M170 156 L268 256 L170 356"/>
+    <path d="M286 356 H364"/>
+  </g>
+</svg>

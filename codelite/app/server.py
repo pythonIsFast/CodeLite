@@ -31,9 +31,10 @@ from typing import Any
 
 from flask import Flask, Response, jsonify, render_template, request
 
-from ..config import AppConfig
+from ..config import AppConfig, context_window_for
 from ..permission.modes import Mode
 from ..provider.auth import AuthError
+from ..provider.login import ChatGPTLoginManager
 from ..tools import registry
 from .runtime import Runtime, RunInProgress
 
@@ -47,12 +48,27 @@ SSE_HEADERS = {
 }
 
 
+def _context_window(runtime: Runtime, model: str) -> int:
+    """Codex's own figure for the model's context window, else the static fallback."""
+    try:
+        live = runtime.session.context_window(model)
+    except Exception:  # noqa: BLE001 - a display figure must not 500 the route
+        live = None
+    return live or context_window_for(model)
+
+
 def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) -> Flask:
     app = Flask(__name__)
     app.config["runtime"] = runtime or Runtime(config)
+    app.config["login_manager"] = ChatGPTLoginManager(
+        app.config["runtime"].session.config
+    )
 
     def rt() -> Runtime:
         return app.config["runtime"]
+
+    def login_manager() -> ChatGPTLoginManager:
+        return app.config["login_manager"]
 
     def _conversation_or_404(conversation_id: str):
         conversation = rt().store.get_conversation(conversation_id)
@@ -98,6 +114,35 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         except Exception as error:  # noqa: BLE001 - surfaced to the UI as-is
             return jsonify({"error": str(error)}), 502
 
+    # -- ChatGPT account ------------------------------------------------------
+
+    @app.get("/api/auth")
+    def auth_status():
+        return jsonify(login_manager().status())
+
+    @app.post("/api/auth/login")
+    def start_auth_login():
+        try:
+            authorization_url = login_manager().start()
+        except RuntimeError as error:
+            return jsonify({"error": str(error)}), 409
+        return jsonify({"authorization_url": authorization_url}), 202
+
+    @app.post("/api/auth/cancel")
+    def cancel_auth_login():
+        login_manager().cancel()
+        return jsonify({"cancelled": True})
+
+    @app.get("/api/usage")
+    def usage():
+        """The ChatGPT plan's allowance, as last reported by Codex.
+
+        Returns ``{"usage": null}`` rather than an error when nothing is known
+        yet -- the figures only arrive on the headers of a real request, so a
+        fresh install genuinely has none until the first message.
+        """
+        return jsonify({"usage": rt().plan_usage()})
+
     # -- conversations ------------------------------------------------------------
 
     @app.get("/api/conversations")
@@ -128,7 +173,10 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         return jsonify(
             {
                 **conversation.as_dict(),
-                "items": runtime.store.load_items(conversation_id),
+                # Entries rather than bare payloads: the UI needs each item's
+                # timestamp and token count for the per-message footer.
+                "entries": runtime.store.load_entries(conversation_id),
+                "context_window": _context_window(runtime, conversation.model),
                 "busy": runtime.is_busy(conversation),
                 "pending_permissions": runtime.pending_permissions(conversation),
             }

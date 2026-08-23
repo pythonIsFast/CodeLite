@@ -97,6 +97,16 @@ class CodexModelInfo:
     support_verbosity: bool | None = None
     default_verbosity: str | None = None
     default_reasoning_level: str | None = None
+    #: Effective *input* budget in tokens -- the figure to measure usage
+    #: against. Codex reports 272000 for every model today, which is the 400000
+    #: total minus 128000 held back for output. The official CLI compacts at
+    #: 0.95 of it (~258400), which is why this app stops there too.
+    context_window: int | None = None
+    #: What the underlying model could take. Capability, not policy: requests
+    #: are held to `context_window` regardless, so this must not be used as
+    #: the denominator for a usage indicator.
+    max_context_window: int | None = None
+    display_name: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
 
 
@@ -106,6 +116,13 @@ def _optional_str(value: Any) -> str | None:
 
 def _optional_bool(value: Any) -> bool | None:
     return value if isinstance(value, bool) else None
+
+
+def _optional_int(value: Any) -> int | None:
+    # Reject bools explicitly: `isinstance(True, int)` is True in Python.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value) if value > 0 else None
 
 
 def _to_model_info(value: Any) -> CodexModelInfo | None:
@@ -122,6 +139,9 @@ def _to_model_info(value: Any) -> CodexModelInfo | None:
         support_verbosity=_optional_bool(value.get("support_verbosity")),
         default_verbosity=_optional_str(value.get("default_verbosity")),
         default_reasoning_level=_optional_str(value.get("default_reasoning_level")),
+        context_window=_optional_int(value.get("context_window")),
+        max_context_window=_optional_int(value.get("max_context_window")),
+        display_name=_optional_str(value.get("display_name")),
         raw=value,
     )
 
