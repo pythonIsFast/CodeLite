@@ -366,6 +366,30 @@ function reasoningBlock(text = "") {
   return div;
 }
 
+function modelDecisionCard(data) {
+  const card = document.createElement("section");
+  card.className = "model-decision";
+  const title = document.createElement("strong");
+  title.textContent = `${data.router || "Luna"} chose ${data.model_name || data.model}`;
+  const reason = document.createElement("p");
+  reason.textContent = data.reason || "Choosing the lowest capable model.";
+  card.append(title, reason);
+
+  const profiles = data.profiles || {};
+  const list = document.createElement("div");
+  list.className = "model-decision-profiles";
+  for (const model of ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]) {
+    const profile = profiles[model];
+    if (!profile) continue;
+    const row = document.createElement("p");
+    row.className = model === data.model ? "selected" : "";
+    row.textContent = `${profile.name}: ${profile.fit} ${profile.limit}`;
+    list.appendChild(row);
+  }
+  card.appendChild(list);
+  return card;
+}
+
 /* -- Message footer -------------------------------------------------------- */
 
 const ICONS = {
@@ -1012,6 +1036,12 @@ function connectStream(conversationId) {
     });
 
   on("ready", (data) => setBusy(Boolean(data.busy)));
+  on("model_routing", () => setBusy(true, "Luna is choosing a model…"));
+  on("model_selected", (data) => {
+    append(modelDecisionCard(data));
+    setBusy(true, `Luna chose ${data.model_name || data.model}…`);
+    scrollDown();
+  });
 
   on("step", (data) => {
     // A fresh model turn: later text/tool calls belong in their own bubble/group.
@@ -1425,7 +1455,8 @@ async function sendMessage() {
 function ensureModelOption(model) {
   if (!model || [...el.modelSelect.options].some((o) => o.value === model)) return;
   const option = document.createElement("option");
-  option.value = option.textContent = model;
+  option.value = model;
+  option.textContent = model === "auto" ? "Auto (Luna decides)" : model;
   el.modelSelect.appendChild(option);
 }
 
@@ -1443,15 +1474,16 @@ function fillModes(select, selected) {
 async function loadModels() {
   try {
     const data = await get("/api/models");
-    state.models = data.models || [];
+    state.models = ["auto", ...(data.models || []).filter((model) => model !== "auto")];
   } catch (error) {
     toast(`Could not load models: ${error.message}`, true);
-    state.models = [state.meta.default_model];
+    state.models = ["auto", state.meta.default_model];
   }
   el.modelSelect.replaceChildren();
   for (const model of state.models) {
     const option = document.createElement("option");
-    option.value = option.textContent = model;
+    option.value = model;
+    option.textContent = model === "auto" ? "Auto (Luna decides)" : model;
     el.modelSelect.appendChild(option);
   }
 }

@@ -52,6 +52,13 @@ python3 run.py --mode permit_writes --model gpt-5.6-sol
 python3 run.py --headless
 ```
 
+The model picker also offers **Auto (Luna decides)**. Before each message,
+`gpt-5.6-luna` routes with low reasoning to the lowest capable model: Luna for
+focused routine work, Terra for normal multi-file work and debugging, and Sol
+only for genuinely complex or high-risk tasks. Code Lite shows Luna's decision
+and the role and limits of all three models in the chat before the main agent
+starts. If routing is unavailable, it falls back to Terra rather than Sol.
+
 `--headless` serves the UI without opening a window, for when you'd rather
 use your own browser. To run *only* the raw OpenAI-compatible proxy, with no
 agent and no dependencies at all:

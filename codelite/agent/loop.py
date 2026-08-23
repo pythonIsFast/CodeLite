@@ -44,6 +44,7 @@ from ..tools import registry
 from ..tools.base import ToolError
 from ..tools.context import PathOutsideWorkspace, ToolContext
 from . import system_prompt
+from .router import AUTO_MODEL, FALLBACK_MODEL, select_model
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,9 @@ class AgentRunner:
         self._config = config
         self._cancelled = threading.Event()
         self._run_tokens_used = 0
+        self._run_model = (
+            FALLBACK_MODEL if self._conversation.model == AUTO_MODEL else self._conversation.model
+        )
         self._project_context = ""
         self._local_extensions = LocalExtensionHost(
             Path(self._conversation.workspace), set(registry.names())
@@ -109,6 +113,13 @@ class AgentRunner:
 
     def run(self, user_text: str, attachments: list[dict[str, str]] | None = None) -> None:
         self._run_tokens_used = 0
+        self._run_model = self._conversation.model
+        if self._run_model == AUTO_MODEL:
+            self._publish("model_routing", {"router": "Luna"})
+            decision, response = select_model(self._session, user_text)
+            self._run_model = decision.model
+            self._record_auxiliary_usage(response.get("usage") if isinstance(response, dict) else None)
+            self._publish("model_selected", decision.as_event_payload())
         # Discover repository instructions once before the first model turn.
         # A run may contain many tool turns, so rebuilding this bounded context
         # per turn only adds latency and token-accounting work.
@@ -141,7 +152,7 @@ class AgentRunner:
             permissions=self._permissions,
             session=self._session,
             data_dir=self._config.data_dir,
-            model=self._conversation.model,
+            model=self._run_model,
             task_prompt=user_text,
             shell_timeout_seconds=self._config.shell_timeout_seconds,
             publish=self._publish,
@@ -236,10 +247,10 @@ class AgentRunner:
         where the catalog cannot be reached.
         """
         try:
-            live = self._session.context_window(self._conversation.model)
+            live = self._session.context_window(self._run_model)
         except Exception:  # noqa: BLE001 - never fail a run over a display figure
             live = None
-        return live or context_window_for(self._conversation.model)
+        return live or context_window_for(self._run_model)
 
     def _needs_compaction(self) -> bool:
         used = self._conversation.context_tokens
@@ -311,7 +322,7 @@ class AgentRunner:
         try:
             response = self._session.send_responses(
                 {
-                    "model": self._conversation.model,
+                    "model": self._run_model,
                     "instructions": COMPACTION_INSTRUCTIONS,
                     "input": summary_input,
                 },
@@ -436,11 +447,29 @@ class AgentRunner:
             meta["output_tokens"] = output_tokens
         return meta
 
+    def _record_auxiliary_usage(self, usage: dict[str, Any] | None) -> None:
+        """Account for routing without replacing the visible chat context figure."""
+        if not isinstance(usage, dict):
+            return
+        total = usage.get("total_tokens")
+        if not isinstance(total, int):
+            input_tokens = usage.get("input_tokens")
+            output_tokens = usage.get("output_tokens")
+            if isinstance(input_tokens, int) and isinstance(output_tokens, int):
+                total = input_tokens + output_tokens
+        if not isinstance(total, int) or total <= 0:
+            return
+        self._run_tokens_used += total
+        self._conversation.total_tokens += total
+        self._store.record_usage(
+            self._conversation.id, self._conversation.context_tokens, total
+        )
+
     # -- model turn ------------------------------------------------------------
 
     def _request_turn(self, items: list[dict[str, Any]]) -> dict[str, Any] | None:
         body = {
-            "model": self._conversation.model,
+            "model": self._run_model,
             "instructions": system_prompt.build(
                 self._permissions.mode,
                 self._conversation.workspace,

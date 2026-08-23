@@ -425,6 +425,23 @@ button { cursor: pointer; }
   white-space: pre-wrap;
 }
 
+.model-decision {
+  max-width: min(680px, 92%);
+  margin: 8px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.model-decision strong { color: var(--text); }
+.model-decision p { margin: 4px 0 0; }
+.model-decision-profiles { margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--border); }
+.model-decision-profiles p { color: var(--text-faint); }
+.model-decision-profiles p.selected { color: var(--text); font-weight: 600; }
+
 /* -- Files shown by the agent ------------------------------------------- */
 
 .file-showcase {

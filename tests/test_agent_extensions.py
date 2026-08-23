@@ -10,6 +10,7 @@ from codelite.config import AppConfig
 from codelite.db.store import Store
 from codelite.permission.manager import PermissionManager
 from codelite.permission.modes import Mode
+from codelite.agent.router import FALLBACK_MODEL, select_model
 from codelite.project.plugins import LocalExtensionHost
 from codelite.tools.context import ToolContext
 from codelite.tools.web import _PageText, _SearchResults, _validate_public_url
@@ -27,6 +28,21 @@ class FakeSession:
             "output_text": "Compact working summary.",
             "usage": {"input_tokens": 100, "output_tokens": 20, "total_tokens": 120},
         }
+
+
+class RouterSession(FakeSession):
+    def __init__(self, routing_text: str) -> None:
+        self.routing_text = routing_text
+        self.requests = []
+
+    def send_responses(self, body, stream=False):
+        self.requests.append((body, stream))
+        if not stream:
+            return {
+                "output_text": self.routing_text,
+                "usage": {"input_tokens": 8, "output_tokens": 4, "total_tokens": 12},
+            }
+        return {"output": [], "usage": {"input_tokens": 20, "output_tokens": 5, "total_tokens": 25}}
 
 
 class AgentExtensionTests(unittest.TestCase):
@@ -122,6 +138,23 @@ def after_tool(name, arguments, output, context):
             self.assertEqual(refreshed.compaction_summary, "Compact working summary.")  # type: ignore[union-attr]
             self.assertIn("compacted", [event for event, _ in events])
             self.assertEqual(events[-1][0], "compaction_finished")
+
+    def test_auto_model_uses_luna_router_and_keeps_its_decision_visible(self) -> None:
+        session = RouterSession(
+            '{"model":"gpt-5.6-luna","reason":"This is a focused, routine task."}'
+        )
+        decision, _ = select_model(session, "Rename this button.")
+        request, streaming = session.requests[0]
+        self.assertFalse(streaming)
+        self.assertEqual(request["model"], "gpt-5.6-luna")
+        self.assertEqual(request["reasoning"], {"effort": "low"})
+        self.assertEqual(decision.model, "gpt-5.6-luna")
+        self.assertIn("routine", decision.reason)
+
+    def test_auto_model_falls_back_to_terra_not_sol(self) -> None:
+        decision, _ = select_model(RouterSession("not JSON"), "Do a task")
+        self.assertEqual(decision.model, FALLBACK_MODEL)
+        self.assertTrue(decision.fallback)
 
 
 if __name__ == "__main__":
