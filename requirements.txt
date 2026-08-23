@@ -1,0 +1,11 @@
+# Dependencies for the Code Lite desktop app (codelite.agent / codelite.app).
+#
+# The provider layer (codelite.provider) deliberately needs NONE of these --
+# it runs on the Python standard library alone, so `python3 -m codelite.provider`
+# works with nothing installed.
+#
+# Both packages below are small: pywebview draws the window using the OS's own
+# webview engine rather than bundling a browser.
+
+Flask>=3.0
+pywebview>=5.0

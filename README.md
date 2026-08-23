@@ -1,132 +1,145 @@
 # Code Lite
 
-A lightweight, from-scratch coding agent -- currently at its **first build
-stage**: a pure-Python, stdlib-only proxy that lets you call OpenAI-shaped
-APIs (`/v1/chat/completions`, `/v1/responses`, `/v1/models`,
-`/v1/images/generations`, `/v1/images/edits`) using your existing **ChatGPT
-Plus** subscription instead of API credits, by reusing the OAuth tokens the
-official [Codex CLI](https://github.com/openai/codex) already stores at
-`~/.codex/auth.json`.
+A lightweight, resource-efficient coding agent — built to stay small on disk
+and dependencies while doing the job of heavier tools.
 
-Later stages will add an agent loop, tool use (reading/writing files,
-running shell commands, ...), context management, and a UI on top of this
-provider layer -- aiming for something in the spirit of
-[opencode](https://github.com/sst/opencode), but smaller on disk and with
-its own UI.
+Code Lite runs on your existing **ChatGPT** subscription instead of API
+credits, by reusing the OAuth tokens the official
+[Codex CLI](https://github.com/openai/codex) already stores at
+`~/.codex/auth.json`. It opens in a **native window** (the OS's own webview —
+no bundled Chromium, no Electron), talks to your files and shell through a
+small set of tools, and gates risky actions behind a permission system you
+control.
 
-This is a from-scratch Python reimplementation of the ideas in
+Two layers, kept deliberately separate:
+
+| Layer | What it is | Dependencies |
+|---|---|---|
+| `codelite.provider` | ChatGPT-OAuth → OpenAI-compatible API (auth, transport, image handling, optional local proxy) | **none** — Python standard library only |
+| `codelite.agent` + `codelite.app` | The agent loop, tools, permissions, persistence, and the desktop window | Flask + pywebview |
+
+The provider layer is a from-scratch Python reimplementation of the ideas in
 [EvanZhouDev/openai-oauth](https://github.com/EvanZhouDev/openai-oauth)
-(TypeScript/Bun); see [NOTICE](NOTICE) for attribution details. Both
-projects are Apache-2.0.
+(TypeScript/Bun); the agent loop's structure took inspiration from
+[sst/opencode](https://github.com/sst/opencode). See [NOTICE](NOTICE) for
+attribution. All three projects are Apache-2.0.
 
-## Why "provider layer" and not just "a proxy"?
-
-The HTTP proxy (`codelite.provider.server`) is one *caller* of a small,
-in-process interface -- it is not the interface itself. A future agent loop
-can build a `codelite.provider.Session` directly and call `send_chat`,
-`send_responses`, `generate_image`, `edit_image`, `list_models` in-process,
-without spinning up a local HTTP server at all:
-
-```python
-from codelite.provider import load_session
-
-session = load_session()
-print(session.list_models())
-result = session.send_chat({
-    "model": "gpt-5.2",
-    "messages": [{"role": "user", "content": "Say hi in one word."}],
-})
-print(result["choices"][0]["message"]["content"])
-```
-
-## Running the local proxy
-
-Requires only the Python 3 standard library -- no `pip install`, no
-`requirements.txt`. You do need existing ChatGPT/Codex OAuth tokens (run
-`codex login` once, using the official Codex CLI, if you haven't).
+## Running it
 
 ```bash
-python3 -m codelite.provider --port 10531
+pip install -r requirements.txt
+python3 -m codelite
 ```
 
-Then point any OpenAI-client library at `http://127.0.0.1:10531/v1` with any
-placeholder API key (the proxy ignores it -- auth comes from `auth.json`).
+You need ChatGPT/Codex OAuth tokens already on disk — run `codex login` once
+with the official Codex CLI if you haven't. Code Lite refreshes those tokens
+itself but does not implement the interactive login flow.
+
+Useful flags:
+
+```bash
+python3 -m codelite --mode permit_writes --model gpt-5.6-sol
+```
+
+```bash
+python3 -m codelite --headless
+```
+
+`--headless` serves the UI without opening a window, for when you'd rather
+use your own browser. To run *only* the raw OpenAI-compatible proxy, with no
+agent and no dependencies at all:
+
+```bash
+python3 -m codelite.provider
+```
+
+## Permission modes
+
+Reads are never gated — they can't break anything. What changes per mode is
+how **file writes** and **shell commands** are handled:
+
+| Mode | File writes | Shell commands |
+|---|---|---|
+| `ask` | you confirm each one | you confirm each one |
+| `permit_writes` | run automatically | you confirm each one |
+| `auto` | run automatically | a second model reviews each one |
+| `bypass` | run automatically | run automatically |
+
+In **`auto`** mode, a separate judge model (`gpt-5.6-luna` by default) sees
+both the shell command *and* the task you actually asked for — a command can
+look harmless on its own while being unrelated to the job. If the judge
+blocks a command, that's not a dead end: it explains why, the agent is told
+the reason, and the question is escalated to you with the judge's reasoning
+shown, so you make the final call.
+
+You can switch modes mid-conversation from the window's header, and grant
+"allow for the rest of this session" from any prompt.
+
+## Tools
+
+`read_file`, `write_file`, `edit_file`, `list_dir`, `grep`, `find_files`,
+`shell`.
+
+Search is implemented in pure Python rather than shelling out to
+`grep`/`ripgrep`, so it needs no permission prompt and behaves the same on
+every machine. Every path the model supplies is resolved against the
+conversation's workspace and rejected if it escapes it.
 
 ## What works
 
-- **Token refresh**: reads `~/.codex/auth.json` (or `$CODEX_HOME/auth.json`),
-  refreshes the access token via the OAuth `refresh_token` grant when it's
-  close to expiry (or hasn't been refreshed in the last 55 minutes), and
-  writes the refreshed tokens straight back to the same file.
-- **`/v1/responses`**: passthrough to Codex's `/responses`, with the same
-  body normalization the reference implementation applies (forces
-  `stream=true` upstream, `store=false`, adds
-  `reasoning.encrypted_content` to `include`, applies model-specific
-  reasoning/verbosity defaults from Codex's own model catalog). If the
-  caller asked for a non-streaming response, the SSE reply is buffered
-  into one JSON object; `previous_response_id` / `item_reference` are
-  rejected up front since Codex's OAuth backend is stateless (`store: false`
-  is forced) and can't replay history server-side -- replay the full
-  conversation in `input` instead.
-- **`/v1/chat/completions`** (streaming and non-streaming, including tool
-  calls): translated to and from `/responses` directly, since Code Lite
-  doesn't depend on the Vercel AI SDK the reference implementation uses for
-  this. See the "Known limitations" note below.
-- **`/v1/images/generations`** and **`/v1/images/edits`**: same field
-  allow-list and restrictions as the reference (JSON-only, `b64_json`-only
-  responses, no streaming, no masks, up to 5 reference images for edits,
-  50 MB per file, default model `gpt-image-2`).
-- **`/v1/models`**: Codex's own model catalog, filtered to publicly listed
-  models, via the same `client_version` handshake the official CLI uses
-  (auto-discovered from the `@openai/codex` npm package, with a pinned
-  fallback if that lookup fails).
+- **Token refresh** — reads `~/.codex/auth.json` (or `$CODEX_HOME`), refreshes
+  the access token when it nears expiry, writes it straight back.
+- **Streaming agent loop** — model turn → tool calls → results → repeat, with
+  text, tool calls and results streaming into the window live.
+- **Four permission modes**, including the judge-model path described above.
+- **Persistence** — conversations and full history in SQLite, so restarting
+  the app doesn't lose anything.
+- **OpenAI-compatible endpoints** via the provider layer:
+  `/v1/chat/completions`, `/v1/responses`, `/v1/models`,
+  `/v1/images/generations`, `/v1/images/edits`.
 
 ## Known limitations
 
-- **No interactive login flow.** Code Lite only *refreshes* tokens that
-  already exist in `auth.json`; it does not implement the browser-based
-  OAuth authorization-code exchange. Use the official Codex CLI
-  (`codex login`) to sign in the first time.
-- **Chat Completions streaming event mapping is not verified against a live
-  stream.** The reference implementation delegates all Chat Completions
-  translation to the Vercel AI SDK (`ai` / `@ai-sdk/openai`), a third-party
-  npm package. Since Code Lite is stdlib-only, `codelite/provider/chat.py`
-  reimplements that translation directly against the public Responses API
-  request/event shapes instead. The non-streaming path is on firm ground
-  (it only depends on the final `response.output` shape, which is confirmed
-  against the reference project's own test fixtures). The *streaming* event
-  names (`response.output_item.added`, `response.function_call_arguments.delta`,
-  `response.output_text.delta`, `response.completed`, ...) are implemented
-  from general knowledge of OpenAI's public Responses API docs and have
-  only been tested against hand-written fixtures, not a real streaming
-  Codex response -- test before relying on it.
-- **`stop` (stop sequences) and `max_tokens` are silently dropped** when
-  translating a Chat Completions request: the Responses API has no direct
-  equivalent, and Codex's own body normalization removes
-  `max_output_tokens` from every request unconditionally regardless.
-- Not hardened for exposure beyond `127.0.0.1`.
+- **No interactive login.** Only token *refresh* is implemented; sign in with
+  `codex login` first.
+- **Shell commands are one-shot.** Each `shell` call is a fresh process, so
+  `cd` doesn't persist between calls — chain with `&&` when order matters.
+- **"Allow for session" is coarse.** It grants the whole category (all writes,
+  or all shell commands) for the rest of the conversation, not a specific
+  path or command pattern.
+- **Chat Completions streaming translation is unverified against a live
+  stream.** The provider's `/v1/chat/completions` path exists for external
+  OpenAI-client compatibility; its non-streaming path is solid, but the
+  streaming event mapping was written from the public Responses API docs and
+  tested only against hand-written fixtures. The agent itself doesn't use
+  this path — it speaks the Responses API directly.
+- **pywebview needs a system webview backend** (WebKitGTK on Linux, usually
+  already present; WebView2 on Windows). On a minimal system this may need a
+  one-time system package.
+- **On reload, a tool card's success/failure is inferred** from its stored
+  output text rather than a persisted flag — cosmetic only.
+- Localhost only, no authentication: it's the private back end of a desktop
+  window, not a service to expose.
 
 ## Project layout
 
 ```
 codelite/
-  provider/          # this build stage
-    config.py         # every endpoint/model/path default, in one place
-    auth.py           # auth.json load / refresh / persist, JWT claim helpers
-    transport.py       # authenticated Codex requests, /responses body normalization
-    sse.py              # Server-Sent-Events parsing
-    chat.py              # Chat Completions <-> Responses API translation
-    images.py             # /v1/images/* request normalization
-    multipart.py           # stdlib multipart/form-data decoder (no `cgi` dependency)
-    models.py                # Codex model catalog + client-version resolution
-    session.py                # the in-process "send a request, get an answer" interface
-    server.py                  # the local HTTP proxy (one more Session caller)
-    __main__.py                 # `python -m codelite.provider` CLI entry point
+  provider/       stdlib-only: OAuth, Codex transport, SSE, images, proxy
+  agent/          loop.py, system_prompt.py, judge.py
+  tools/          base, context, files, search, shell, registry
+  permission/     modes.py (the four modes), manager.py (the gate)
+  db/             SQLite store; history is stored as Responses-API items
+  app/            runtime.py (live state), server.py (Flask), window.py,
+                  static/ + templates/ (vanilla HTML/JS/CSS, no build step)
+  config.py       app-wide defaults
+  __main__.py     python3 -m codelite
 ```
 
-Later stages (`codelite/agent/`, `codelite/tools/`, `codelite/ui/`, ...)
-will sit alongside `codelite/provider/` without needing to change it.
+History is persisted in the same shape the model consumes (Responses API
+input items), so there's no translation layer between storage, the model
+call, and the UI.
 
 ## License
 
-Apache License 2.0 -- see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
