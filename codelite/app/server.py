@@ -29,7 +29,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, Response, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request, send_file
 
 from ..config import AppConfig, context_window_for
 from ..permission.modes import Mode
@@ -181,6 +181,20 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
                 "pending_permissions": runtime.pending_permissions(conversation),
             }
         )
+
+    @app.get("/api/conversations/<conversation_id>/files/<path:file_path>")
+    def conversation_file(conversation_id: str, file_path: str):
+        """Serve one workspace file for an explicitly requested chat showcase."""
+        conversation, error = _conversation_or_404(conversation_id)
+        if error:
+            return error
+        workspace = Path(conversation.workspace).resolve()
+        candidate = (workspace / file_path).resolve()
+        if candidate == workspace or workspace not in candidate.parents:
+            return jsonify({"error": "File path is outside the workspace."}), 400
+        if not candidate.is_file():
+            return jsonify({"error": "File not found."}), 404
+        return send_file(candidate, as_attachment=False, conditional=True)
 
     @app.patch("/api/conversations/<conversation_id>")
     def update_conversation(conversation_id: str):

@@ -403,6 +403,34 @@ button { cursor: pointer; }
   white-space: pre-wrap;
 }
 
+/* -- Files shown by the agent ------------------------------------------- */
+
+.file-showcase {
+  max-width: 780px; width: 100%; margin: 0 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  overflow: hidden;
+}
+.file-showcase img, .file-showcase video {
+  display: block;
+  width: 100%;
+  max-height: 520px;
+  object-fit: contain;
+  background: var(--bg-sunken);
+}
+.file-showcase audio { display: block; width: calc(100% - 24px); margin: 12px; }
+.file-showcase > a { display: inline-block; margin: 12px; color: var(--accent-strong); }
+.file-showcase figcaption {
+  padding: 7px 12px;
+  border-top: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.file-showcase figcaption a { color: var(--text-dim); text-decoration: none; }
+.file-showcase figcaption a:hover { color: var(--accent-strong); text-decoration: underline; }
+
 /* -- Plan (todo list) ---------------------------------------------------- */
 
 .todos {

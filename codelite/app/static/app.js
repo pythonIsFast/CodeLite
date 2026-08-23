@@ -535,6 +535,54 @@ function finishToolRow(group, row, output, ok) {
   if (!ok) { row.classList.add("open"); group.classList.add("open"); }
 }
 
+function fileUrl(path) {
+  const conversation = state.active && state.active.id;
+  if (!conversation || !path) return "";
+  const encodedPath = String(path).split("/").map(encodeURIComponent).join("/");
+  return `/api/conversations/${encodeURIComponent(conversation)}/files/${encodedPath}`;
+}
+
+function showcaseFile(path) {
+  const url = fileUrl(path);
+  if (!url) return null;
+  const name = String(path).split("/").pop() || path;
+  const extension = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+  const card = document.createElement("figure");
+  card.className = "file-showcase";
+
+  let preview;
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(extension)) {
+    preview = document.createElement("img");
+    preview.src = url;
+    preview.alt = name;
+    preview.loading = "lazy";
+  } else if (["mp4", "webm", "mov"].includes(extension)) {
+    preview = document.createElement("video");
+    preview.src = url;
+    preview.controls = true;
+  } else if (["mp3", "wav", "ogg", "m4a"].includes(extension)) {
+    preview = document.createElement("audio");
+    preview.src = url;
+    preview.controls = true;
+  } else {
+    preview = document.createElement("a");
+    preview.href = url;
+    preview.textContent = "Open file";
+    preview.target = "_blank";
+    preview.rel = "noopener";
+  }
+  card.appendChild(preview);
+  const caption = document.createElement("figcaption");
+  const link = document.createElement("a");
+  link.href = url;
+  link.textContent = path;
+  link.target = "_blank";
+  link.rel = "noopener";
+  caption.appendChild(link);
+  card.appendChild(caption);
+  return card;
+}
+
 /**
  * Render a stored conversation from its Responses-API items.
  *
@@ -579,13 +627,23 @@ function renderEntries(entries) {
       }
       if (!group) { group = toolGroup(); el.messages.appendChild(group); }
       const row = toolRow(group, item.name || "tool", item.arguments);
-      rows.set(item.call_id || item.id, { group, row });
+      rows.set(item.call_id || item.id, { group, row, name: item.name, arguments: item.arguments });
       continue;
     }
     if (item.type === "function_call_output") {
       const entry = rows.get(item.call_id);
       const output = typeof item.output === "string" ? item.output : JSON.stringify(item.output);
-      if (entry) finishToolRow(entry.group, entry.row, output, !/^Error:|did not allow/.test(output));
+      const ok = !/^Error:|did not allow/.test(output);
+      if (entry) {
+        finishToolRow(entry.group, entry.row, output, ok);
+        if (ok && entry.name === "showcase_file") {
+          try {
+            const args = JSON.parse(entry.arguments || "{}");
+            const card = showcaseFile(args.path);
+            if (card) el.messages.appendChild(card);
+          } catch { /* the tool row still records malformed historical arguments */ }
+        }
+      }
     }
   }
 
@@ -884,14 +942,23 @@ function connectStream(conversationId) {
     state.liveReasoning = null;
     if (!state.liveGroup) state.liveGroup = append(toolGroup());
     const row = toolRow(state.liveGroup, data.name || "tool", data.arguments);
-    state.toolCards.set(data.call_id, { group: state.liveGroup, row });
+    state.toolCards.set(data.call_id, { group: state.liveGroup, row, name: data.name, arguments: data.arguments });
     scrollDown();
     setBusy(true, `Running ${data.name}…`);
   });
 
   on("tool_finished", (data) => {
     const entry = state.toolCards.get(data.call_id);
-    if (entry) finishToolRow(entry.group, entry.row, data.output, data.ok);
+    if (entry) {
+      finishToolRow(entry.group, entry.row, data.output, data.ok);
+      if (data.ok && entry.name === "showcase_file") {
+        try {
+          const args = JSON.parse(entry.arguments || "{}");
+          const card = showcaseFile(args.path);
+          if (card) append(card);
+        } catch { /* tool arguments were already reported as invalid */ }
+      }
+    }
     setBusy(true);
   });
 

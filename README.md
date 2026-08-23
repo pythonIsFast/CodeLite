@@ -85,7 +85,7 @@ You can switch modes mid-conversation from the window's header, and grant
 ## Tools
 
 `read_file`, `write_file`, `edit_file`, `list_dir`, `grep`, `find_files`,
-`generate_image`, `shell`, `todo_write`.
+`generate_image`, `showcase_file`, `view_image`, `shell`, `todo_write`.
 
 Search is implemented in pure Python rather than shelling out to
 `grep`/`ripgrep`, so it needs no permission prompt and behaves the same on
@@ -99,6 +99,10 @@ answer instead of a spinner.
 `generate_image` uses the current ChatGPT sign-in to create an image. The
 agent supplies a prompt and a workspace-relative output path; saving it uses
 the same file-write permission policy as other generated files.
+
+`showcase_file` embeds a workspace file in the chat (with native previews for
+images, video, and audio). `view_image` sends an image to the signed-in model
+for a visual description the agent can use in its next step.
 
 ## What works
 

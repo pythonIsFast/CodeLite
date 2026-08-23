@@ -27,7 +27,9 @@ from .files import EDIT_FILE, LIST_DIR, READ_FILE, WRITE_FILE
 from .images import GENERATE_IMAGE
 from .search import FIND_FILES, GREP
 from .shell import SHELL
+from .showcase import SHOWCASE_FILE
 from .todo import TODO_WRITE
+from .vision import VIEW_IMAGE
 
 TOOLS: tuple[Tool, ...] = (
     READ_FILE,
@@ -37,8 +39,10 @@ TOOLS: tuple[Tool, ...] = (
     GREP,
     FIND_FILES,
     GENERATE_IMAGE,
+    SHOWCASE_FILE,
     SHELL,
     TODO_WRITE,
+    VIEW_IMAGE,
 )
 
 _BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}

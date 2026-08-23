@@ -38,6 +38,9 @@ file when you really are replacing all of it.
 reach outside it.
 - When the user asks for a new image asset, use `generate_image` with a precise \
 prompt and a workspace-relative output path. It saves the generated image there.
+- Use `showcase_file` with a workspace-relative path when a file should appear \
+in the chat. Use `view_image` before describing or checking an image's visual \
+contents; it returns an image-aware description to you.
 - Each `shell` call is a fresh process, but the working directory carries over: \
 `cd build` affects your later shell calls. The tool result tells you when the \
 directory moved.
