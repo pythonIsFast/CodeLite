@@ -109,12 +109,18 @@ selected. Leaving it on **auto** sends no level at all and lets the model's own
 default apply, which is not one value either: Sol defaults to `low` while Terra
 and Luna default to `medium`.
 
-**Fast** requests OpenAI's priority service tier, which Codex describes as
-"1.5x speed, increased usage". Requesting it is not the same as receiving it:
-an account without the entitlement is served the normal tier with no error at
-all. Code Lite therefore reports the tier the response actually came back with
-rather than the one it asked for, and tells you when Fast was not honoured.
-`gpt-5.4-mini` offers no Fast tier and the button hides itself for it.
+**Fast** asks for the priority service tier, which Codex describes as "1.5x
+speed, increased usage" and offers on every model except `gpt-5.4-mini` — the
+button hides itself for that one. It is sent as `service_tier: "priority"`,
+the tier id from the catalog, and only for a model that advertises the tier:
+the backend accepts the value for any model, so a pointless request would not
+be refused.
+
+There is deliberately no "Fast was applied" indicator. Every response reports
+`service_tier: "default"`, including responses to requests that did not ask
+for a tier and requests sent to a model with no fast tier at all, so the field
+carries no information about what was actually served. An indicator built on
+it would have reported a working Fast mode as denied.
 
 ## Safety you control
 

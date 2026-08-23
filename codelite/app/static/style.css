@@ -738,14 +738,6 @@ button { cursor: pointer; }
   background: color-mix(in srgb, var(--accent) 12%, var(--bg-raised));
   color: var(--accent-strong);
 }
-/* Requested but not granted: the account has no Fast entitlement, so say so
-   rather than leaving the button looking active. */
-.pill-toggle.denied[aria-pressed="true"] {
-  border-color: var(--border);
-  background: var(--bg-raised);
-  color: var(--text-faint);
-  text-decoration: line-through;
-}
 .pill-toggle[hidden] { display: none; }
 
 .field-picker .custom-select-trigger { padding: 8px 11px; border-radius: var(--radius); }

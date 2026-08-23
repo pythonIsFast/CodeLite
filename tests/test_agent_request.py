@@ -34,9 +34,10 @@ from codelite.permission.modes import Mode
 class FakeSession:
     """Records the body it was handed and never talks to anything."""
 
-    def __init__(self, efforts: list[str] | None = None) -> None:
+    def __init__(self, efforts: list[str] | None = None, fast: bool = True) -> None:
         self.bodies: list[dict[str, Any]] = []
         self._efforts = efforts if efforts is not None else ["low", "medium", "high"]
+        self._fast = fast
 
     def send_responses(self, body: dict[str, Any], *, stream: bool = False) -> Any:
         self.bodies.append(body)
@@ -44,7 +45,7 @@ class FakeSession:
         return iter(())
 
     def model_capabilities(self, model: str) -> dict[str, Any]:
-        return {"efforts": list(self._efforts), "default_effort": "medium", "fast": True}
+        return {"efforts": list(self._efforts), "default_effort": "medium", "fast": self._fast}
 
     def context_window(self, model: str) -> int:
         return 272_000
@@ -110,29 +111,18 @@ def test_a_supported_effort_survives_the_clamp(tmp_path: Path) -> None:
     assert session.bodies[0]["reasoning"] == {"effort": "ultra"}
 
 
-def test_granted_tier_is_reported_once(tmp_path: Path) -> None:
-    events: list[tuple[str, dict[str, Any]]] = []
-    store = Store(tmp_path / "db.sqlite")
-    created = store.create_conversation(
-        workspace=str(tmp_path), model="gpt-5.6-luna", permission_mode="ask", fast_mode=1
-    )
-    runner = AgentRunner(
-        session=FakeSession(),
-        store=store,
-        conversation=created,
-        permissions=PermissionManager(Mode.ASK, lambda *_: None),
-        publish=lambda name, data: events.append((name, data)),
-        config=AppConfig(data_dir=tmp_path),
-    )
+def test_fast_is_omitted_for_a_model_without_the_tier() -> None:
+    """gpt-5.4-mini has no fast tier, and the backend does not object.
 
-    # Codex answers an unentitled Fast request with the default tier and no error.
-    runner._report_service_tier({"service_tier": "default"})
-    runner._report_service_tier({"service_tier": "default"})
-    assert events == [
-        ("service_tier", {"requested": "priority", "granted": "default", "fast": False})
-    ]
+    Sending `priority` to it returns 200 and the response still reads
+    `service_tier: "default"` -- exactly what a supported model returns too.
+    Nothing downstream can tell the difference, so the request has to be
+    filtered here rather than relying on the server to refuse it.
+    """
+    import tempfile
 
-    runner._granted_tier = ""
-    events.clear()
-    runner._report_service_tier({"service_tier": "priority"})
-    assert events[0][1]["fast"] is True
+    with tempfile.TemporaryDirectory() as tmp:
+        session = FakeSession(fast=False)
+        runner = _runner(Path(tmp), session, fast_mode=1)
+        runner._request_turn([])
+        assert "service_tier" not in session.bodies[0]

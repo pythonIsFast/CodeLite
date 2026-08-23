@@ -1220,15 +1220,6 @@ function connectStream(conversationId) {
     scrollDown();
   });
 
-  on("service_tier", (data) => {
-    // Codex does not refuse an unentitled Fast request, it just serves the
-    // default tier. Without saying so, the toggle would look like it worked.
-    renderFastToggle(true, el.modelSelect.value, data.fast);
-    if (!data.fast) {
-      toast("Fast was requested, but this account was served the default tier.");
-    }
-  });
-
   on("step", (data) => {
     // A fresh model turn: later text/tool calls belong in their own bubble/group.
     finalizeLiveText();
@@ -1757,15 +1748,17 @@ function fillEffortSelect(select, selected = "", model = "") {
   renderCustomSelect(select);
 }
 
-/** Reflect the Fast request, and whether the server honoured it. */
-function renderFastToggle(requested, model, granted = null) {
+/**
+ * Reflect whether this conversation asks for the Fast tier.
+ *
+ * There is deliberately no "was it granted" state. The response echoes
+ * `service_tier: "default"` for every request -- even for a model that has no
+ * fast tier at all -- so any such indicator would be invented, and would have
+ * reported a working Fast mode as denied.
+ */
+function renderFastToggle(requested, model) {
   el.fastToggle.hidden = !supportsFast(model);
   el.fastToggle.setAttribute("aria-pressed", String(Boolean(requested)));
-  const denied = Boolean(requested) && granted === false;
-  el.fastToggle.classList.toggle("denied", denied);
-  el.fastToggle.title = denied
-    ? "Fast was requested but this account was served the default tier"
-    : "Fast: 1.5x speed, increased usage";
 }
 
 async function loadModels() {
