@@ -28,8 +28,14 @@ attribution. All three projects are Apache-2.0.
 
 ```bash
 pip install -r requirements.txt
-python3 -m codelite
 ```
+
+```bash
+python3 run.py
+```
+
+`run.py` works from any directory. (`python3 -m codelite` does the same thing,
+but only from the project root.)
 
 You need ChatGPT/Codex OAuth tokens already on disk — run `codex login` once
 with the official Codex CLI if you haven't. Code Lite refreshes those tokens
@@ -38,11 +44,11 @@ itself but does not implement the interactive login flow.
 Useful flags:
 
 ```bash
-python3 -m codelite --mode permit_writes --model gpt-5.6-sol
+python3 run.py --mode permit_writes --model gpt-5.6-sol
 ```
 
 ```bash
-python3 -m codelite --headless
+python3 run.py --headless
 ```
 
 `--headless` serves the UI without opening a window, for when you'd rather
@@ -124,6 +130,7 @@ conversation's workspace and rejected if it escapes it.
 ## Project layout
 
 ```
+run.py            start the app from anywhere
 codelite/
   provider/       stdlib-only: OAuth, Codex transport, SSE, images, proxy
   agent/          loop.py, system_prompt.py, judge.py
