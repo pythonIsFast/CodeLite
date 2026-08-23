@@ -1158,11 +1158,6 @@ function renderAttachments() {
   el.attachments.replaceChildren();
   el.attachments.hidden = state.attachments.length === 0;
   for (const attachment of state.attachments) {
-    const chip = document.createElement("span");
-    chip.className = "attachment-chip";
-    const name = document.createElement("span");
-    name.textContent = attachment.name;
-    name.title = attachment.path;
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = "×";
@@ -1172,6 +1167,26 @@ function renderAttachments() {
       state.attachments = state.attachments.filter((item) => item.path !== attachment.path);
       renderAttachments();
     });
+
+    if (String(attachment.type || "").startsWith("image/")) {
+      const preview = document.createElement("div");
+      preview.className = "attachment-preview";
+      preview.title = attachment.name;
+      const image = document.createElement("img");
+      image.src = fileUrl(attachment.path);
+      image.alt = attachment.name;
+      image.loading = "lazy";
+      remove.className = "attachment-preview-remove";
+      preview.append(image, remove);
+      el.attachments.appendChild(preview);
+      continue;
+    }
+
+    const chip = document.createElement("span");
+    chip.className = "attachment-chip";
+    const name = document.createElement("span");
+    name.textContent = attachment.name;
+    name.title = attachment.path;
     chip.append(name, remove);
     el.attachments.appendChild(chip);
   }
