@@ -72,6 +72,9 @@ const el = {
   globalMemory: $("global-memory"),
   globalMemoryPath: $("global-memory-path"),
   globalMemorySave: $("global-memory-save"),
+  importSummary: $("import-summary"),
+  importStatus: $("import-status"),
+  codexImport: $("codex-import"),
   projectSettingsTab: $("project-settings-tab"),
   projectSettings: $("project-settings"),
   projectSettingsPath: $("project-settings-path"),
@@ -199,6 +202,52 @@ function selectSettingsTab(name) {
   }
   for (const panel of el.settingsPanels) {
     panel.hidden = panel.dataset.settingsPanel !== name;
+  }
+}
+
+function plural(count, singular, suffix = "s") {
+  return `${count} ${singular}${count === 1 ? "" : suffix}`;
+}
+
+async function loadCodexImport() {
+  const data = await api("/api/import/codex");
+  if (!data.found) {
+    el.importSummary.textContent =
+      `No Codex installation found at ${data.codex_home}.`;
+    el.codexImport.disabled = true;
+    return;
+  }
+  const parts = [`${plural(data.available, "session")} in ${data.codex_home}`];
+  if (data.already_imported) parts.push(`${data.already_imported} already imported`);
+  el.importSummary.textContent = parts.join(" · ");
+  el.codexImport.disabled = data.new === 0;
+  el.codexImport.textContent = data.new
+    ? `Import ${plural(data.new, "session")}`
+    : "Nothing new to import";
+}
+
+async function runCodexImport() {
+  el.codexImport.disabled = true;
+  // No progress channel exists for this, so say plainly that a long wait is
+  // the import working rather than the window having frozen.
+  el.importStatus.textContent = "Importing… this can take a while on a large history.";
+  try {
+    const report = await api("/api/import/codex", { method: "POST" });
+    const parts = [`Imported ${plural(report.imported, "conversation")}`];
+    if (report.skipped) parts.push(`${report.skipped} already present`);
+    if (report.empty) parts.push(`${report.empty} empty`);
+    if (report.failed) parts.push(`${report.failed} failed`);
+    el.importStatus.textContent = `${parts.join(", ")}.`;
+    // The first error is the useful one; the rest are usually the same cause.
+    if (report.errors && report.errors.length) {
+      el.importStatus.textContent += ` First error: ${report.errors[0]}`;
+    }
+    if (report.imported) {
+      await loadConversations();
+      toast(`Imported ${plural(report.imported, "conversation")} from Codex.`);
+    }
+  } finally {
+    await loadCodexImport().catch(() => {});
   }
 }
 
@@ -1715,13 +1764,18 @@ function wireEvents() {
     await Promise.all([
       loadGlobalSettings(),
       loadProjectSettings(),
+      loadCodexImport(),
     ]).catch((error) => toast(error.message, true));
+    el.importStatus.textContent = "";
     selectSettingsTab("account");
     el.settingsOverlay.hidden = false;
   });
   for (const tab of el.settingsTabs) {
     tab.addEventListener("click", () => selectSettingsTab(tab.dataset.settingsTab));
   }
+  el.codexImport.addEventListener("click", () => {
+    runCodexImport().catch((error) => { el.importStatus.textContent = error.message; });
+  });
   el.settingsClose.addEventListener("click", () => { el.settingsOverlay.hidden = true; });
   el.globalMemorySave.addEventListener("click", () => {
     saveGlobalMemory().catch((error) => toast(error.message, true));

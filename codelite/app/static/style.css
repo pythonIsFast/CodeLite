@@ -855,6 +855,15 @@ button { cursor: pointer; }
 .settings-panel h3 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); }
 .account-name { margin: 0; font-weight: 600; }
 .account-detail { margin: 2px 0 14px; color: var(--text-dim); font-size: 13px; }
+/* Explanatory prose in a panel: quieter than a detail line, and allowed to
+   wrap over several lines without pushing the controls apart. */
+.settings-note {
+  margin: 0 0 14px;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.settings-note:last-child { margin-bottom: 0; }
 .settings-panel textarea {
   width: 100%;
   resize: vertical;

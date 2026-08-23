@@ -129,7 +129,20 @@ Code Lite loads useful project context only when it is needed and keeps every in
 | **MCP** | `.codelite/mcp.json` | Stdio servers start only when their tools are used |
 | **LSP** | `.codelite/lsp.json` | Language servers start on their first code-intelligence request |
 
-The settings panel separates account, global memory, and project configuration. Global memory works even before a project chat exists.
+The settings panel separates account, global memory, project configuration, and import. Global memory works even before a project chat exists.
+
+## Bring your Codex history along
+
+**Settings → Import** reads every session the official Codex CLI recorded under
+`~/.codex` and turns each one into a conversation here, keeping its original
+date, workspace, and token counts. Each import records which session it came
+from, so running it again picks up only what is new.
+
+Imported chats are history rather than resumable state, and the reason is worth
+stating: Codex's tool calls name Codex's own tools, and its reasoning items are
+encrypted against the response chain they came from. Sending either back would
+be an invalid request, not a cosmetic mismatch. So tool calls arrive as readable
+text and the encrypted reasoning is left out. Nothing that was said is lost.
 
 ## Extend a project
 
@@ -230,6 +243,7 @@ codelite/
   project/        Memory, instructions, skills, plugins
   permission/     Modes and scoped approval manager
   db/             SQLite conversation store
+  importer.py     Codex session history import
   app/            Runtime, server, native window, vanilla UI
 ```
 

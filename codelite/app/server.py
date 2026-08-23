@@ -38,6 +38,7 @@ from flask import Flask, Response, jsonify, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
 from ..config import AppConfig, context_window_for
+from ..importer import import_codex_sessions, preview_codex_sessions
 from ..permission.modes import Mode
 from ..provider.auth import AuthError
 from ..provider.login import ChatGPTLoginManager
@@ -210,6 +211,29 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         fresh install genuinely has none until the first message.
         """
         return jsonify({"usage": rt().plan_usage()})
+
+    # -- importing from the Codex CLI ---------------------------------------------
+
+    @app.get("/api/import/codex")
+    def codex_import_preview():
+        """How many Codex sessions are on disk and how many are new."""
+        return jsonify(preview_codex_sessions(rt().store))
+
+    @app.post("/api/import/codex")
+    def codex_import():
+        """Import every Codex session that is not in the database yet.
+
+        Synchronous on purpose: this is a one-off button, and a progress
+        channel for it would outweigh the feature. It can take a while on a
+        large history, which is why the button reports that it is working.
+        """
+        runtime = rt()
+        report = import_codex_sessions(
+            runtime.store,
+            permission_mode=runtime.config.default_permission_mode.value,
+            default_model=runtime.config.agent_model,
+        )
+        return jsonify(report.as_dict())
 
     # -- conversations ------------------------------------------------------------
 

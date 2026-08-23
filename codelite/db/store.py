@@ -71,6 +71,10 @@ MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     ("items", "meta", "TEXT NOT NULL DEFAULT '{}'"),
     ("conversations", "compaction_summary", "TEXT NOT NULL DEFAULT ''"),
     ("conversations", "compacted_item_count", "INTEGER NOT NULL DEFAULT 0"),
+    # Which external session a conversation was imported from, empty for one
+    # started here. It is what makes re-running an import a no-op instead of a
+    # second copy of every chat.
+    ("conversations", "source_id", "TEXT NOT NULL DEFAULT ''"),
 )
 
 
@@ -94,6 +98,9 @@ class Conversation:
     #: A private working summary used by the agent; the full transcript stays in items.
     compaction_summary: str = ""
     compacted_item_count: int = 0
+    #: The external session this was imported from, empty when started here.
+    #: `from_row` splats every column, so a new column has to land here too.
+    source_id: str = ""
 
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Conversation":
@@ -176,6 +183,72 @@ class Store:
                 ),
             )
         return conversation
+
+    def imported_source_ids(self) -> set[str]:
+        """Every external session already in the database."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT source_id FROM conversations WHERE source_id != ''"
+            ).fetchall()
+        return {row["source_id"] for row in rows}
+
+    def import_conversation(
+        self,
+        *,
+        source_id: str,
+        title: str,
+        workspace: str,
+        model: str,
+        permission_mode: str,
+        created_at: str,
+        items: list[dict[str, Any]],
+        timestamps: list[str] | None = None,
+        context_tokens: int = 0,
+        total_tokens: int = 0,
+    ) -> str:
+        """Insert a whole conversation with its original timestamps.
+
+        Separate from :meth:`create_conversation` plus :meth:`append_items` for
+        two reasons: an import must keep the times the exchange actually
+        happened rather than stamping everything "now", and it has to be one
+        transaction, so a failure halfway cannot leave a conversation whose
+        history stops mid-sentence.
+        """
+        conversation_id = uuid.uuid4().hex
+        stamps = list(timestamps or [])
+        # A short list would silently shift every later item's time, so pad
+        # rather than zip: the count comes from a file we did not write.
+        if len(stamps) < len(items):
+            stamps += [created_at] * (len(items) - len(stamps))
+        updated_at = stamps[-1] if stamps else created_at
+
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO conversations (id, title, workspace, model, "
+                "permission_mode, created_at, updated_at, context_tokens, "
+                "total_tokens, source_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    conversation_id,
+                    title,
+                    workspace,
+                    model,
+                    permission_mode,
+                    created_at,
+                    updated_at,
+                    context_tokens,
+                    total_tokens,
+                    source_id,
+                ),
+            )
+            conn.executemany(
+                "INSERT INTO items (conversation_id, payload, created_at, meta) "
+                "VALUES (?, ?, ?, ?)",
+                [
+                    (conversation_id, json.dumps(item), stamp, "{}")
+                    for item, stamp in zip(items, stamps)
+                ],
+            )
+        return conversation_id
 
     def get_conversation(self, conversation_id: str) -> Conversation | None:
         with self._connect() as conn:
