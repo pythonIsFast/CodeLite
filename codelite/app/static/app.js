@@ -296,8 +296,11 @@ function behaviourRow(setting, value, models) {
     menu.hidden = true;
     picker.append(select, trigger, menu);
     control.appendChild(picker);
-    // The custom picker has to be initialised after the option list exists.
-    requestAnimationFrame(() => renderCustomSelect(select));
+    // A fresh picker every render, so it must be registered with the global
+    // click-to-open wiring here -- renderCustomSelect alone only repaints a
+    // picker that initCustomSelect already knows about, which is why these
+    // dropdowns opened to nothing before.
+    initCustomSelect(picker);
   } else {
     const input = document.createElement("input");
     input.type = "number";
@@ -2140,32 +2143,39 @@ function changeCustomSelect(select, direction) {
   select.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+/** Wire one picker into the customSelects map. Safe to call more than once
+ * for the same root (behaviour settings rebuild their pickers on every
+ * render), since it always re-reads the current DOM nodes. */
+function initCustomSelect(root) {
+  const select = root.querySelector("select");
+  const trigger = root.querySelector(".custom-select-trigger");
+  const menu = root.querySelector(".custom-select-menu");
+  const picker = { root, trigger, menu };
+  customSelects.set(select, picker);
+  trigger.setAttribute("aria-label", select.title || root.closest("label")?.querySelector("span")?.textContent || "Select option");
+  trigger.addEventListener("click", () => {
+    const opening = menu.hidden;
+    closeCustomSelects(picker);
+    root.classList.toggle("open", opening);
+    trigger.setAttribute("aria-expanded", String(opening));
+    menu.hidden = !opening;
+    if (opening) menu.querySelector("[aria-selected='true']")?.focus();
+  });
+  trigger.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (menu.hidden) changeCustomSelect(select, event.key === "ArrowDown" ? 1 : -1);
+    } else if ((event.key === "Enter" || event.key === " ") && menu.hidden) {
+      event.preventDefault();
+      trigger.click();
+    }
+  });
+  renderCustomSelect(select);
+}
+
 function initCustomSelects() {
   for (const root of document.querySelectorAll("[data-select-picker]")) {
-    const select = root.querySelector("select");
-    const trigger = root.querySelector(".custom-select-trigger");
-    const menu = root.querySelector(".custom-select-menu");
-    const picker = { root, trigger, menu };
-    customSelects.set(select, picker);
-    trigger.setAttribute("aria-label", select.title || root.closest("label")?.querySelector("span")?.textContent || "Select option");
-    trigger.addEventListener("click", () => {
-      const opening = menu.hidden;
-      closeCustomSelects(picker);
-      root.classList.toggle("open", opening);
-      trigger.setAttribute("aria-expanded", String(opening));
-      menu.hidden = !opening;
-      if (opening) menu.querySelector("[aria-selected='true']")?.focus();
-    });
-    trigger.addEventListener("keydown", (event) => {
-      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        event.preventDefault();
-        if (menu.hidden) changeCustomSelect(select, event.key === "ArrowDown" ? 1 : -1);
-      } else if ((event.key === "Enter" || event.key === " ") && menu.hidden) {
-        event.preventDefault();
-        trigger.click();
-      }
-    });
-    renderCustomSelect(select);
+    initCustomSelect(root);
   }
   document.addEventListener("click", (event) => {
     if (!event.target.closest("[data-select-picker]")) closeCustomSelects();
