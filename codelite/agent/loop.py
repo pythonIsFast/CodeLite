@@ -345,11 +345,9 @@ class AgentRunner:
         call, not a measure of the last one, and that is the number worth
         showing: it answers "will the next turn still fit".
 
-        Returns the metadata to store alongside this turn's items, so the UI
-        can show a per-message token count after a reload. Stays silent when
-        the upstream reports no usage at all -- publishing zeroes would render
-        as a real "0 tokens" reading, which is a lie about the request rather
-        than an absence of data.
+        Stores the model's output-only count with its response items. The UI
+        uses that for the small counter beneath an assistant message; the
+        total is still tracked separately for conversation accounting.
         """
         input_tokens = usage.get("input_tokens")
         output_tokens = usage.get("output_tokens")
@@ -379,12 +377,16 @@ class AgentRunner:
             {
                 "run_tokens": self._run_tokens_used,
                 "turn_tokens": turn_total,
+                "output_tokens": output_tokens,
                 "total_tokens": self._conversation.total_tokens,
                 "context_tokens": context_tokens,
                 "context_window": window,
             },
         )
-        return {"tokens": turn_total, "context_tokens": context_tokens}
+        meta = {"context_tokens": context_tokens}
+        if isinstance(output_tokens, int) and output_tokens > 0:
+            meta["output_tokens"] = output_tokens
+        return meta
 
     # -- model turn ------------------------------------------------------------
 

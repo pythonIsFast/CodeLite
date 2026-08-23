@@ -74,7 +74,7 @@ const state = {
   liveReasoning: null,
   liveGroup: null,
   liveTodos: null,
-  lastTurnTokens: null,
+  lastTurnOutputTokens: null,
   toolCards: new Map(),
   permissionQueue: [],
   currentPermission: null,
@@ -320,9 +320,9 @@ function footerButton(icon, label, onClick) {
 
 /**
  * Add the action row under an assistant message: copy, retry, when it was
- * written and what the turn cost.
+ * written and how many tokens the visible model output used.
  */
-function attachFooter(bubble, { at, tokens } = {}) {
+function attachFooter(bubble, { at, outputTokens } = {}) {
   const footer = document.createElement("div");
   footer.className = "msg-foot";
 
@@ -352,11 +352,11 @@ function attachFooter(bubble, { at, tokens } = {}) {
     footer.appendChild(time);
   }
 
-  if (Number.isFinite(tokens) && tokens > 0) {
+  if (Number.isFinite(outputTokens) && outputTokens > 0) {
     const cost = document.createElement("span");
     cost.className = "msg-tokens";
-    cost.textContent = `${formatTokens(tokens)} tokens`;
-    cost.title = `${tokens.toLocaleString()} tokens for this turn`;
+    cost.textContent = `${formatTokens(outputTokens)} output tokens`;
+    cost.title = `${outputTokens.toLocaleString()} tokens in this model output`;
     footer.appendChild(cost);
   }
 
@@ -377,7 +377,7 @@ function finalizeLiveText() {
   if (bubble.querySelector(".msg-foot")) return;
   attachFooter(bubble, {
     at: new Date().toISOString(),
-    tokens: state.lastTurnTokens,
+    outputTokens: state.lastTurnOutputTokens,
   });
 }
 
@@ -610,7 +610,7 @@ function renderEntries(entries) {
       if (text.trim()) {
         group = null;
         const bubble = el.messages.appendChild(assistantBubble(text));
-        attachFooter(bubble, { at: entry.created_at, tokens: meta.tokens });
+        attachFooter(bubble, { at: entry.created_at, outputTokens: meta.output_tokens });
       }
       continue;
     }
@@ -918,6 +918,7 @@ function connectStream(conversationId) {
     // A fresh model turn: later text/tool calls belong in their own bubble/group.
     finalizeLiveText();
     state.liveGroup = null;
+    state.lastTurnOutputTokens = null;
     setBusy(true, data.step > 1 ? `Working… (step ${data.step})` : "Working…");
   });
 
@@ -970,7 +971,7 @@ function connectStream(conversationId) {
       if (Number.isFinite(data.context_window)) state.active.context_window = data.context_window;
       if (Number.isFinite(data.total_tokens)) state.active.total_tokens = data.total_tokens;
     }
-    if (Number.isFinite(data.turn_tokens)) state.lastTurnTokens = data.turn_tokens;
+    if (Number.isFinite(data.output_tokens)) state.lastTurnOutputTokens = data.output_tokens;
     updateUsage({
       contextTokens: data.context_tokens,
       contextWindow: data.context_window,
