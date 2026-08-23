@@ -201,12 +201,12 @@ flowchart LR
     A <--> S[(SQLite conversations)]
 ```
 
-| Layer | Responsibility | Dependencies |
+| Layer | Responsibility | Design |
 |---|---|---|
-| `codelite.provider` | ChatGPT OAuth, token refresh, Responses transport, images, optional local proxy | Python standard library |
-| `codelite.agent` | Agent loop, prompts, routing, compaction, tool calls | Core runtime |
-| `codelite.tools` | Filesystem, shell, search, web, image, memory, planning, questions | Small and permission-aware |
-| `codelite.app` | Flask runtime, SSE, SQLite-backed conversations, native window | Flask + pywebview |
+| `codelite.provider` | ChatGPT OAuth, token refresh, Responses transport, images, optional local proxy | Standard-library only |
+| `codelite.agent` | Agent loop, prompts, routing, compaction, and tool orchestration | Streaming, context-aware workflow |
+| `codelite.tools` | Filesystem, shell, search, web, image, memory, planning, and questions | Workspace-scoped and permission-aware |
+| `codelite.app` | Flask runtime, SSE, SQLite-backed conversations, and native window | Flask + pywebview desktop layer |
 
 The provider layer is a from-scratch Python implementation inspired by [EvanZhouDev/openai-oauth](https://github.com/EvanZhouDev/openai-oauth). The agent-loop structure took inspiration from [OpenCode](https://github.com/anomalyco/opencode). See [NOTICE](NOTICE) for attribution.
 
