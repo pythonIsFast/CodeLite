@@ -689,8 +689,9 @@ button { cursor: pointer; }
 }
 .custom-select-option:hover, .custom-select-option:focus-visible { background: var(--bg-sunken); color: var(--text); outline: none; }
 .custom-select-option[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text); }
-.pill-picker { width: min(160px, 30vw); }
+.pill-picker { width: fit-content; max-width: min(160px, 30vw); }
 .pill-picker .custom-select-trigger {
+  width: auto;
   border-radius: 999px;
   padding: 4px 11px;
   font-size: 12px;
