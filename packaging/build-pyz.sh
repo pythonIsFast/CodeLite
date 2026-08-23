@@ -16,17 +16,25 @@ stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 
 cp -r "$root/codelite" "$stage/codelite"
-# Stale bytecode from a local run would otherwise be shipped, and it is both
-# dead weight and pinned to whatever interpreter produced it.
+# git ignores these, `cp -r` does not. A virtualenv someone created inside the
+# package directory is 25 MB of another interpreter, and it would ride along
+# silently -- the archive still works, so nothing would flag it.
+find "$stage/codelite" -maxdepth 2 \
+    \( -name '__pycache__' -o -name 'venv' -o -name '.venv' -o -name '*.egg-info' \) \
+    -type d -prune -exec rm -rf {} +
+# Any remaining bytecode is dead weight pinned to the interpreter that made it.
 find "$stage/codelite" -name '__pycache__' -type d -prune -exec rm -rf {} +
+find "$stage/codelite" -name '*.pyc' -delete
 
 # --no-compile for the same reason: .pyc files inside the archive would only be
 # valid for the build machine's Python version.
 python3 -m pip install --quiet --no-compile --target "$stage" \
     -r "$root/requirements.txt"
 
-# pip leaves metadata and console-script stubs that nothing in a zipapp reads.
-find "$stage" -maxdepth 1 -name '*.dist-info' -type d -prune -exec rm -rf {} +
+# The *.dist-info directories have to stay. Werkzeug asks
+# importlib.metadata for its own version while building a server, so deleting
+# them as dead weight makes the app import fine and then fail to serve.
+# Console-script stubs are genuinely unreachable from a zipapp, so those go.
 rm -rf "$stage/bin"
 
 cat > "$stage/__main__.py" <<'PY'

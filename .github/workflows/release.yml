@@ -119,10 +119,35 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
+          set -euo pipefail
+          pyz="dist/code-lite-$VERSION.pyz"
+
           # Proves the archive is intact and every bundled import resolves.
-          # --help exits before any window or network work, so it needs no
-          # display and no credentials.
-          python3 "dist/code-lite-$VERSION.pyz" --help
+          python3 "$pyz" --help
+
+          # And then actually serve. --help alone let a broken build ship: it
+          # returns before Werkzeug builds a server, and Werkzeug asks
+          # importlib.metadata for its own version at that point -- so a
+          # missing dist-info only surfaces here. Headless needs no display,
+          # and a fresh data dir needs no credentials.
+          python3 "$pyz" --headless --port 10599 --data-dir "$RUNNER_TEMP/cl" \
+            > "$RUNNER_TEMP/serve.log" 2>&1 &
+          server=$!
+          for _ in $(seq 1 30); do
+            if curl -fsS -o /dev/null http://127.0.0.1:10599/api/meta; then
+              break
+            fi
+            # A crash must fail fast rather than burn the whole timeout.
+            kill -0 "$server" 2>/dev/null || { cat "$RUNNER_TEMP/serve.log"; exit 1; }
+            sleep 1
+          done
+          for path in / /static/app.js /static/style.css /api/meta; do
+            code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:10599$path")"
+            echo "$path -> $code"
+            [ "$code" = "200" ] || { cat "$RUNNER_TEMP/serve.log"; exit 1; }
+          done
+          kill "$server" 2>/dev/null || true
+          cat "$RUNNER_TEMP/serve.log"
 
       - name: Build the Debian package
         env:
