@@ -137,6 +137,31 @@
     </div>
   </div>
 
+  <div class="overlay" id="rename-overlay" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="rename-title">
+      <h2 id="rename-title">Rename conversation</h2>
+      <label class="field">
+        <span>Title</span>
+        <input id="rename-input" type="text" maxlength="200" spellcheck="false" />
+      </label>
+      <div class="perm-actions">
+        <button class="btn" id="rename-cancel">Cancel</button>
+        <button class="btn primary" id="rename-save">Rename</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overlay" id="confirm-overlay" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <h2 id="confirm-title">Delete conversation</h2>
+      <p class="confirm-text" id="confirm-text"></p>
+      <div class="perm-actions">
+        <button class="btn" id="confirm-cancel">Cancel</button>
+        <button class="btn danger" id="confirm-ok">Delete</button>
+      </div>
+    </div>
+  </div>
+
   <div class="overlay" id="question-overlay" hidden>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="question-title">
       <h2 id="question-title">Question</h2>

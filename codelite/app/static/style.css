@@ -138,28 +138,84 @@ button { cursor: pointer; }
 .conv-group-add:hover { color: var(--accent); }
 .conv-group.collapsed .conv-group-body { display: none; }
 
+/* A row, not a button: it holds two of them (open, and the menu), and a
+   button inside a button is invalid and unpredictable. `position: relative`
+   anchors the menu popup to the row. */
 .conv {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   width: 100%;
-  padding: 7px 10px 7px 26px;
-  border: 0;
+  padding-left: 18px;
   border-radius: 8px;
-  background: transparent;
-  text-align: left;
   color: var(--text-dim);
   transition: background .12s, color .12s;
 }
 .conv:hover { background: var(--bg-raised); color: var(--text); }
 .conv.active { background: var(--bg-raised); color: var(--text); font-weight: 550; }
-.conv-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conv-del {
-  border: 0; background: none; color: var(--text-faint);
-  opacity: 0; padding: 0 2px; line-height: 1;
+.conv.menu-open { background: var(--bg-raised); color: var(--text); }
+
+.conv-open {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  padding: 7px 0 7px 8px;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
 }
-.conv:hover .conv-del { opacity: 1; }
-.conv-del:hover { color: var(--danger); }
+.conv-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.conv-menu-btn {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  margin-right: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-faint);
+  opacity: 0;
+}
+/* Stays visible while its menu is open, otherwise the control vanishes from
+   under the pointer the moment the mouse moves into the menu. */
+.conv:hover .conv-menu-btn,
+.conv.menu-open .conv-menu-btn { opacity: 1; }
+.conv-menu-btn:hover { background: var(--bg-sunken); color: var(--text); }
+
+/* Fixed, and a child of <body>: the conversation list scrolls, and an
+   absolutely positioned menu would be clipped by that overflow. Coordinates
+   come from placeConversationMenu(). */
+.conv-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 150px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .14);
+}
+.conv-menu button {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 10px;
+  background: none;
+  text-align: left;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 400;
+}
+.conv-menu button:hover { background: var(--bg-sunken); }
+.conv-menu button.destructive { color: var(--danger); }
+.conv-menu button.destructive:hover { background: color-mix(in srgb, var(--danger) 10%, var(--bg-raised)); }
 
 .sidebar-foot {
   display: flex;
@@ -1009,6 +1065,13 @@ button { cursor: pointer; }
 }
 .btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
 .btn.ghost:hover { border-color: var(--danger); color: var(--danger); }
+.btn.danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
+.btn.danger:hover { filter: brightness(.92); }
+.confirm-text { margin: 0; color: var(--text-dim); font-size: 13px; }
 
 /* -- Toast --------------------------------------------------------------- */
 

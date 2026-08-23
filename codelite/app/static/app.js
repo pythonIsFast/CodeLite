@@ -61,6 +61,14 @@ const el = {
   browseWorkspace: $("browse-workspace"),
   newMode: $("new-mode"),
   newEffort: $("new-effort"),
+  renameOverlay: $("rename-overlay"),
+  renameInput: $("rename-input"),
+  renameSave: $("rename-save"),
+  renameCancel: $("rename-cancel"),
+  confirmOverlay: $("confirm-overlay"),
+  confirmText: $("confirm-text"),
+  confirmOk: $("confirm-ok"),
+  confirmCancel: $("confirm-cancel"),
   newCreate: $("new-create"),
   newCancel: $("new-cancel"),
   settingsButton: $("settings-button"),
@@ -98,6 +106,8 @@ const state = {
   models: [],
   efforts: [],
   capabilities: {},
+  pendingRename: null,
+  pendingDelete: null,
   conversations: [],
   active: null,
   stream: null,
@@ -983,7 +993,158 @@ function workspaceLabel(path) {
   return parts[parts.length - 1] || path;
 }
 
+const KEBAB_ICON =
+  `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">` +
+  `<circle cx="8" cy="3.5" r="1.3" fill="currentColor"/>` +
+  `<circle cx="8" cy="8" r="1.3" fill="currentColor"/>` +
+  `<circle cx="8" cy="12.5" r="1.3" fill="currentColor"/></svg>`;
+
+/** Close any open conversation menu. */
+function closeConversationMenu() {
+  const open = el.conversations.querySelector(".conv.menu-open");
+  if (open) open.classList.remove("menu-open");
+  // The menu lives on <body>, not in the row, so it has to be found globally.
+  const menu = document.querySelector(".conv-menu");
+  if (menu) menu.remove();
+}
+
+/**
+ * Place the menu next to its button using fixed coordinates.
+ *
+ * It is appended to <body> rather than to the row on purpose: the sidebar's
+ * conversation list scrolls, and an absolutely positioned child is clipped by
+ * that overflow, so the menu of the bottom-most chat would be cut off.
+ */
+function placeConversationMenu(menu, anchor) {
+  const box = anchor.getBoundingClientRect();
+  menu.style.visibility = "hidden";
+  document.body.appendChild(menu);
+  const height = menu.offsetHeight;
+  const width = menu.offsetWidth;
+  const margin = 6;
+  // Flip above the button when there is no room below it.
+  const below = box.bottom + margin;
+  const top = below + height > window.innerHeight ? box.top - height - margin : below;
+  menu.style.top = `${Math.max(margin, top)}px`;
+  menu.style.left = `${Math.max(margin, Math.min(box.right - width, window.innerWidth - width - margin))}px`;
+  menu.style.visibility = "";
+}
+
+function conversationMenu(conversation) {
+  const menu = document.createElement("div");
+  menu.className = "conv-menu";
+  menu.setAttribute("role", "menu");
+
+  const item = (label, onClick, destructive = false) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.setAttribute("role", "menuitem");
+    if (destructive) button.className = "destructive";
+    button.textContent = label;
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      closeConversationMenu();
+      onClick();
+    });
+    return button;
+  };
+
+  menu.append(
+    item("Rename", () => askRename(conversation)),
+    item("Delete", () => askDelete(conversation), true),
+  );
+  return menu;
+}
+
+/**
+ * One sidebar row: a button to open it plus a menu button.
+ *
+ * A div rather than a button, because it contains two buttons and nesting
+ * interactive elements is invalid HTML -- which is why the old delete control
+ * was a span pretending to be a button.
+ */
+function conversationRow(conversation) {
+  const row = document.createElement("div");
+  row.className = "conv" + (conversation.id === state.active?.id ? " active" : "");
+
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "conv-open";
+  open.title = conversation.workspace;
+  const title = document.createElement("span");
+  title.className = "conv-title";
+  title.textContent = conversation.title || "Untitled";
+  open.appendChild(title);
+  open.addEventListener("click", () => openConversation(conversation.id));
+
+  const menuButton = document.createElement("button");
+  menuButton.type = "button";
+  menuButton.className = "conv-menu-btn";
+  menuButton.innerHTML = KEBAB_ICON;
+  menuButton.title = "Conversation options";
+  menuButton.setAttribute("aria-label", "Conversation options");
+  menuButton.setAttribute("aria-haspopup", "menu");
+  menuButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const wasOpen = row.classList.contains("menu-open");
+    closeConversationMenu();
+    if (wasOpen) return;
+    row.classList.add("menu-open");
+    placeConversationMenu(conversationMenu(conversation), menuButton);
+  });
+
+  row.append(open, menuButton);
+  return row;
+}
+
+function askRename(conversation) {
+  state.pendingRename = conversation;
+  el.renameInput.value = conversation.title || "";
+  el.renameOverlay.hidden = false;
+  el.renameInput.focus();
+  el.renameInput.select();
+}
+
+async function commitRename() {
+  const conversation = state.pendingRename;
+  if (!conversation) return;
+  const title = el.renameInput.value.trim();
+  el.renameOverlay.hidden = true;
+  state.pendingRename = null;
+  // An empty title is a no-op rather than a way to blank the name: the list
+  // would then show "Untitled" and the original would be unrecoverable.
+  if (!title || title === conversation.title) return;
+  const updated = await patch(`/api/conversations/${conversation.id}`, { title })
+    .catch((error) => { toast(error.message, true); return null; });
+  if (!updated) return;
+  if (state.active?.id === conversation.id) {
+    state.active.title = updated.title ?? title;
+    el.title.textContent = state.active.title || "Untitled";
+  }
+  await loadConversations();
+}
+
+function askDelete(conversation) {
+  state.pendingDelete = conversation;
+  el.confirmText.textContent =
+    `"${conversation.title || "Untitled"}" and its whole history will be deleted. ` +
+    "This cannot be undone.";
+  el.confirmOverlay.hidden = false;
+  el.confirmCancel.focus();
+}
+
+async function commitDelete() {
+  const conversation = state.pendingDelete;
+  el.confirmOverlay.hidden = true;
+  state.pendingDelete = null;
+  if (!conversation) return;
+  await del(`/api/conversations/${conversation.id}`).catch((e) => toast(e.message, true));
+  if (state.active?.id === conversation.id) closeConversation();
+  await loadConversations();
+}
+
 function renderConversationList() {
+  closeConversationMenu();
   el.conversations.replaceChildren();
 
   const groups = new Map(); // label -> { workspace, conversations: [] }
@@ -1022,29 +1183,7 @@ function renderConversationList() {
     body.className = "conv-group-body";
 
     for (const conversation of conversations) {
-      const row = document.createElement("button");
-      row.className = "conv" + (conversation.id === state.active?.id ? " active" : "");
-      row.type = "button";
-
-      const title = document.createElement("span");
-      title.className = "conv-title";
-      title.textContent = conversation.title || "Untitled";
-      title.title = conversation.workspace;
-
-      const remove = document.createElement("span");
-      remove.className = "conv-del";
-      remove.textContent = "×";
-      remove.title = "Delete conversation";
-      remove.addEventListener("click", async (event) => {
-        event.stopPropagation();
-        await del(`/api/conversations/${conversation.id}`).catch((e) => toast(e.message, true));
-        if (state.active?.id === conversation.id) closeConversation();
-        await loadConversations();
-      });
-
-      row.append(title, remove);
-      row.addEventListener("click", () => openConversation(conversation.id));
-      body.appendChild(row);
+      body.appendChild(conversationRow(conversation));
     }
 
     if (!isActiveGroup) wrap.classList.toggle("collapsed", groups.size > 1 && conversations.length > 4);
@@ -1975,6 +2114,31 @@ function wireEvents() {
     if (updated) Object.assign(state.active, updated);
   });
 
+  el.renameSave.addEventListener("click", () => {
+    commitRename().catch((error) => toast(error.message, true));
+  });
+  el.renameCancel.addEventListener("click", () => {
+    el.renameOverlay.hidden = true;
+    state.pendingRename = null;
+  });
+  el.renameInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    commitRename().catch((error) => toast(error.message, true));
+  });
+
+  el.confirmOk.addEventListener("click", () => {
+    commitDelete().catch((error) => toast(error.message, true));
+  });
+  el.confirmCancel.addEventListener("click", () => {
+    el.confirmOverlay.hidden = true;
+    state.pendingDelete = null;
+  });
+
+  // A menu anchored to a row must close on any click elsewhere, or it
+  // outlives the row it belongs to. Escape is handled with the overlays below.
+  document.addEventListener("click", () => closeConversationMenu());
+
   el.fastToggle.addEventListener("click", async () => {
     const next = el.fastToggle.getAttribute("aria-pressed") !== "true";
     renderFastToggle(next, el.modelSelect.value);
@@ -2050,8 +2214,17 @@ function wireEvents() {
 
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
+    closeConversationMenu();
     if (!el.newOverlay.hidden) el.newOverlay.hidden = true;
     if (!el.settingsOverlay.hidden) el.settingsOverlay.hidden = true;
+    if (!el.renameOverlay.hidden) {
+      el.renameOverlay.hidden = true;
+      state.pendingRename = null;
+    }
+    if (!el.confirmOverlay.hidden) {
+      el.confirmOverlay.hidden = true;
+      state.pendingDelete = null;
+    }
     if (!el.questionOverlay.hidden) replyQuestion("The user cancelled the question.");
   });
 }
