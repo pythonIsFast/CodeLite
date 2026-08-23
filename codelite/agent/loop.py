@@ -40,6 +40,7 @@ from ..provider.session import Session
 from ..provider.sse import iterate_server_sent_events
 from ..project.context import build_project_context
 from ..project.plugins import LocalExtensionHost
+from ..questions import QuestionManager
 from ..tools import registry
 from ..tools.base import ToolError
 from ..tools.context import PathOutsideWorkspace, ToolContext
@@ -71,11 +72,13 @@ class AgentRunner:
         permissions: PermissionManager,
         publish: Publisher,
         config: AppConfig,
+        questions: QuestionManager | None = None,
     ) -> None:
         self._session = session
         self._store = store
         self._conversation = conversation
         self._permissions = permissions
+        self._questions = questions
         self._publish = publish
         self._config = config
         self._cancelled = threading.Event()
@@ -89,9 +92,11 @@ class AgentRunner:
         )
 
     def cancel(self) -> None:
-        """Ask the run to stop, and release anything blocked on a permission prompt."""
+        """Ask the run to stop, and release anything blocked on a user prompt."""
         self._cancelled.set()
         self._permissions.cancel_pending()
+        if self._questions is not None:
+            self._questions.cancel_pending()
 
     def compact(self) -> None:
         """Manually compact this conversation without adding a chat message."""
@@ -151,6 +156,7 @@ class AgentRunner:
             workspace=Path(self._conversation.workspace),
             permissions=self._permissions,
             session=self._session,
+            questions=self._questions,
             data_dir=self._config.data_dir,
             model=self._run_model,
             task_prompt=user_text,

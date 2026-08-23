@@ -922,6 +922,19 @@ button { cursor: pointer; }
   background: var(--bg);
   outline: none;
 }
+.question-text { margin: 0 0 12px; line-height: 1.45; }
+.question-options { display: grid; gap: 7px; margin: 0 0 12px; }
+.question-option {
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--text);
+  text-align: left;
+}
+.question-option:hover { border-color: var(--accent); background: var(--bg-raised); }
+.question-option strong, .question-option span { display: block; }
+.question-option span { margin-top: 2px; color: var(--text-dim); font-size: 12px; }
 .perm-feedback:focus, .field input:focus { border-color: var(--accent); }
 
 .field { display: block; margin-bottom: 12px; }

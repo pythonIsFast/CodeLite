@@ -37,6 +37,7 @@ from ..permission.manager import PermissionManager
 from ..permission.modes import Mode
 from ..provider.config import ProviderConfig
 from ..provider.session import Session
+from ..questions import QuestionManager
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ class ConversationRuntime:
     """Live state for one conversation."""
 
     permissions: PermissionManager
+    questions: QuestionManager
     subscribers: list[queue.Queue] = field(default_factory=list)
     runner: AgentRunner | None = None
     thread: threading.Thread | None = None
@@ -126,7 +128,12 @@ class Runtime:
                             cid, event, data
                         ),
                         judge=make_shell_judge(self.session, self.config.judge_model),
-                    )
+                    ),
+                    questions=QuestionManager(
+                        publish=lambda event, data, cid=conversation.id: self.publish(
+                            cid, event, data
+                        )
+                    ),
                 )
                 self._conversations[conversation.id] = state
             return state
@@ -141,6 +148,9 @@ class Runtime:
         if reply not in ("once", "session", "deny"):
             return False
         return state.permissions.reply(request_id, reply, feedback)  # type: ignore[arg-type]
+
+    def reply_question(self, conversation: Conversation, question_id: str, answer: str) -> bool:
+        return self._state_for(conversation).questions.reply(question_id, answer)
 
     # -- events ---------------------------------------------------------------------
 
@@ -168,6 +178,8 @@ class Runtime:
             # a permission prompt the agent is still blocked on.
             for pending in state.permissions.list_pending():
                 yield _format_sse("permission_request", pending)
+            for pending in state.questions.list_pending():
+                yield _format_sse("question_request", pending)
             while True:
                 try:
                     yield stream.get(timeout=KEEPALIVE_SECONDS)
@@ -196,6 +208,7 @@ class Runtime:
                 store=self.store,
                 conversation=conversation,
                 permissions=state.permissions,
+                questions=state.questions,
                 publish=lambda event, data, cid=conversation.id: self.publish(
                     cid, event, data
                 ),
@@ -222,6 +235,7 @@ class Runtime:
                 store=self.store,
                 conversation=conversation,
                 permissions=state.permissions,
+                questions=state.questions,
                 publish=lambda event, data, cid=conversation.id: self.publish(
                     cid, event, data
                 ),

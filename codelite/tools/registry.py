@@ -28,6 +28,7 @@ from .extensions import EXTENSIONS
 from .files import EDIT_FILE, LIST_DIR, READ_FILE, WRITE_FILE
 from .images import GENERATE_IMAGE
 from .memory import PROJECT_MEMORY
+from .questions import ASK_USER
 from .search import FIND_FILES, GREP
 from .shell import SHELL
 from .showcase import SHOWCASE_FILE
@@ -49,6 +50,7 @@ TOOLS: tuple[Tool, ...] = (
     SHOWCASE_FILE,
     SHELL,
     TODO_WRITE,
+    ASK_USER,
     VIEW_IMAGE,
     WEB_SEARCH,
     WEB_FETCH,

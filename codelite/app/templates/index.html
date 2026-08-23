@@ -124,6 +124,19 @@
     </div>
   </div>
 
+  <div class="overlay" id="question-overlay" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="question-title">
+      <h2 id="question-title">Question</h2>
+      <p class="question-text" id="question-text"></p>
+      <div class="question-options" id="question-options"></div>
+      <input class="perm-feedback" id="question-answer" type="text" placeholder="Type your answer…" />
+      <div class="perm-actions">
+        <button class="btn ghost" id="question-cancel">Cancel</button>
+        <button class="btn primary" id="question-submit">Send answer</button>
+      </div>
+    </div>
+  </div>
+
   <div class="overlay" id="new-overlay" hidden>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="new-title">
       <h2 id="new-title">New conversation</h2>

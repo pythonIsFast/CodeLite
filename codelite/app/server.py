@@ -451,4 +451,14 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
             return jsonify({"error": "No such pending request, or invalid reply."}), 404
         return jsonify({"ok": True})
 
+    @app.post("/api/conversations/<conversation_id>/question/<question_id>")
+    def reply_question(conversation_id: str, question_id: str):
+        conversation, error = _conversation_or_404(conversation_id)
+        if error:
+            return error
+        accepted = rt().reply_question(conversation, question_id, str(_body().get("answer") or ""))
+        if not accepted:
+            return jsonify({"error": "No such pending question, or invalid answer."}), 404
+        return jsonify({"ok": True})
+
     return app

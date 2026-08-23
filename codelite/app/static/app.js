@@ -47,6 +47,13 @@ const el = {
   permOnce: $("perm-once"),
   permSession: $("perm-session"),
   permDeny: $("perm-deny"),
+  questionOverlay: $("question-overlay"),
+  questionTitle: $("question-title"),
+  questionText: $("question-text"),
+  questionOptions: $("question-options"),
+  questionAnswer: $("question-answer"),
+  questionCancel: $("question-cancel"),
+  questionSubmit: $("question-submit"),
   newOverlay: $("new-overlay"),
   newWorkspace: $("new-workspace"),
   browseWorkspace: $("browse-workspace"),
@@ -94,7 +101,9 @@ const state = {
   lastTurnOutputTokens: null,
   toolCards: new Map(),
   permissionQueue: [],
+  questionQueue: [],
   currentPermission: null,
+  currentQuestion: null,
   auth: null,
   appLoaded: false,
   authPoll: null,
@@ -1160,6 +1169,11 @@ function connectStream(conversationId) {
     showNextPermission();
   });
 
+  on("question_request", (data) => {
+    state.questionQueue.push(data);
+    showNextQuestion();
+  });
+
   on("title", (data) => {
     if (state.active) state.active.title = data.title;
     el.title.textContent = data.title;
@@ -1253,6 +1267,50 @@ async function replyPermission(reply) {
   showNextPermission();
 }
 
+function showNextQuestion() {
+  if (state.currentQuestion || !state.questionQueue.length) return;
+  const question = state.questionQueue.shift();
+  state.currentQuestion = question;
+  el.questionTitle.textContent = question.header || "Question";
+  el.questionText.textContent = question.question;
+  el.questionOptions.replaceChildren();
+  for (const option of question.options || []) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "question-option";
+    const label = document.createElement("strong");
+    label.textContent = option.label;
+    button.appendChild(label);
+    if (option.description) {
+      const description = document.createElement("span");
+      description.textContent = option.description;
+      button.appendChild(description);
+    }
+    button.addEventListener("click", () => replyQuestion(option.label));
+    el.questionOptions.appendChild(button);
+  }
+  el.questionAnswer.value = "";
+  el.questionAnswer.hidden = !question.allow_freeform;
+  el.questionSubmit.hidden = !question.allow_freeform;
+  el.questionCancel.textContent = question.allow_freeform ? "Cancel" : "Cancel question";
+  el.questionOverlay.hidden = false;
+  (question.allow_freeform ? el.questionAnswer : el.questionOptions.querySelector("button"))?.focus();
+}
+
+async function replyQuestion(answer) {
+  const question = state.currentQuestion;
+  if (!question || !state.active) return;
+  const reply = String(answer || el.questionAnswer.value).trim() || "The user cancelled the question.";
+  el.questionOverlay.hidden = true;
+  state.currentQuestion = null;
+  try {
+    await post(`/api/conversations/${state.active.id}/question/${question.id}`, { answer: reply });
+  } catch (error) {
+    toast(error.message, true);
+  }
+  showNextQuestion();
+}
+
 /* -- Conversation lifecycle ----------------------------------------------- */
 
 async function openConversation(conversationId) {
@@ -1267,6 +1325,9 @@ async function openConversation(conversationId) {
   state.permissionQueue = [];
   state.currentPermission = null;
   el.permOverlay.hidden = true;
+  state.questionQueue = [];
+  state.currentQuestion = null;
+  el.questionOverlay.hidden = true;
 
   el.title.textContent = data.title || "Untitled";
   el.workspace.textContent = data.workspace;
@@ -1674,6 +1735,11 @@ function wireEvents() {
   el.permOnce.addEventListener("click", () => replyPermission("once"));
   el.permSession.addEventListener("click", () => replyPermission("session"));
   el.permDeny.addEventListener("click", () => replyPermission("deny"));
+  el.questionSubmit.addEventListener("click", () => replyQuestion());
+  el.questionCancel.addEventListener("click", () => replyQuestion("The user cancelled the question."));
+  el.questionAnswer.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") replyQuestion();
+  });
 
   el.newChat.addEventListener("click", () => {
     el.newWorkspace.value = state.active?.workspace || state.meta.cwd;
@@ -1719,6 +1785,7 @@ function wireEvents() {
     if (event.key !== "Escape") return;
     if (!el.newOverlay.hidden) el.newOverlay.hidden = true;
     if (!el.settingsOverlay.hidden) el.settingsOverlay.hidden = true;
+    if (!el.questionOverlay.hidden) replyQuestion("The user cancelled the question.");
   });
 }
 

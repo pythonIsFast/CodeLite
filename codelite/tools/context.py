@@ -22,6 +22,7 @@ from typing import Any, Callable
 
 from ..permission.manager import PermissionManager
 from ..provider.session import Session
+from ..questions import QuestionManager
 
 
 class PathOutsideWorkspace(Exception):
@@ -45,6 +46,7 @@ class ToolContext:
     workspace: Path
     permissions: PermissionManager
     session: Session
+    questions: QuestionManager | None = None
     data_dir: Path = Path(".")
     #: The conversation's selected Codex model, used by tools that make a model call.
     model: str = ""

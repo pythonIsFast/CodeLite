@@ -94,7 +94,7 @@ You can switch modes mid-conversation from the window's header, and grant
 `read_file`, `write_file`, `edit_file`, `list_dir`, `grep`, `find_files`,
 `code_intelligence`, `extensions`, `project_memory`, `generate_image`,
 `showcase_file`, `view_image`, `web_search`, `web_fetch`, `shell`,
-`todo_write`, plus project-local tools.
+`todo_write`, `ask_user`, plus project-local tools.
 
 Search is implemented in pure Python rather than shelling out to
 `grep`/`ripgrep`, so it needs no permission prompt and behaves the same on
@@ -104,6 +104,10 @@ conversation's workspace and rejected if it escapes it.
 `todo_write` is how the agent records a multi-step plan; the list is rendered
 in the conversation, so "what is it doing and how far along is it" has a real
 answer instead of a spinner.
+
+`ask_user` pauses an agent step for a focused decision. It can show up to five
+choices, optionally accept a typed answer, and returns the answer directly to
+the model before work continues.
 
 `generate_image` uses the current ChatGPT sign-in to create an image. The
 agent supplies a prompt and a workspace-relative output path; saving it uses

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -12,6 +13,7 @@ from codelite.permission.manager import PermissionManager
 from codelite.permission.modes import Mode
 from codelite.agent.router import FALLBACK_MODEL, select_model
 from codelite.project.plugins import LocalExtensionHost
+from codelite.questions import QuestionManager
 from codelite.tools.context import ToolContext
 from codelite.tools.web import _PageText, _SearchResults, _validate_public_url
 
@@ -46,6 +48,23 @@ class RouterSession(FakeSession):
 
 
 class AgentExtensionTests(unittest.TestCase):
+    def test_ask_user_waits_for_a_choice_and_returns_it(self) -> None:
+        events = []
+        manager = QuestionManager(lambda event, data: events.append((event, data)))
+        answer = []
+        worker = threading.Thread(
+            target=lambda: answer.append(
+                manager.ask("Which style?", [{"label": "Minimal", "description": "Keep it simple."}])
+            )
+        )
+        worker.start()
+        worker.join(0.5)
+        self.assertTrue(worker.is_alive())
+        self.assertEqual(events[0][0], "question_request")
+        self.assertTrue(manager.reply(events[0][1]["id"], "Minimal"))
+        worker.join(0.5)
+        self.assertEqual(answer, ["Minimal"])
+
     def test_html_search_and_page_text_are_compact(self) -> None:
         search = _SearchResults()
         search.feed(
