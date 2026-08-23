@@ -74,7 +74,10 @@ def context_window_for(model: str) -> int:
 
 
 def default_data_dir() -> Path:
-    """Resolve the app's data directory, honoring ``$XDG_DATA_HOME``."""
+    """Resolve the app's data directory, honoring Code Lite/XDG overrides."""
+    codelite_home = os.environ.get("CODELITE_HOME")
+    if codelite_home:
+        return Path(codelite_home)
     xdg = os.environ.get("XDG_DATA_HOME")
     base = Path(xdg) if xdg else Path.home() / ".local" / "share"
     return base / "codelite"

@@ -14,9 +14,8 @@
 
 """CLI entry point: ``python -m codelite.provider``.
 
-Starts the local OpenAI-compatible proxy in the foreground. Existing
-ChatGPT/Codex OAuth tokens at ``~/.codex/auth.json`` (or ``$CODEX_HOME``)
-are required -- run `codex login` first if you haven't already.
+Starts the local OpenAI-compatible proxy in the foreground. It uses the OAuth
+tokens in Code Lite's own data directory, or an explicit ``--auth-file``.
 """
 
 from __future__ import annotations
@@ -37,7 +36,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--host", default=DEFAULT_SERVER_HOST, help=f"Bind host (default: {DEFAULT_SERVER_HOST})")
     parser.add_argument("--port", type=int, default=DEFAULT_SERVER_PORT, help=f"Bind port (default: {DEFAULT_SERVER_PORT})")
-    parser.add_argument("--auth-file", type=Path, default=None, help="Path to auth.json (default: ~/.codex/auth.json)")
+    parser.add_argument(
+        "--auth-file",
+        type=Path,
+        default=None,
+        help="Path to auth.json (default: Code Lite data directory)",
+    )
     parser.add_argument("--codex-version", default=None, help="Override the Codex client version used for model discovery.")
     parser.add_argument("--instructions", default="", help="Default system instructions sent with every /responses request.")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging.")

@@ -16,12 +16,11 @@
 # packages/core/src/runtime.ts (JWT/refresh helpers) and
 # packages/local/src/auth-file.ts (auth.json load/save/refresh), Apache-2.0.
 
-"""Creates, loads, refreshes, and persists ChatGPT/Codex OAuth tokens.
+"""Creates, loads, refreshes, and persists Code Lite's ChatGPT OAuth tokens.
 
-Tokens live in ``~/.codex/auth.json`` (the same file the official Codex CLI
-uses), so anyone who has already run ``codex login`` can use Code Lite
-without a separate login step. Code Lite can also create the same token file
-itself through the OAuth authorization-code flow with PKCE.
+Tokens live in Code Lite's own data directory, completely separate from the
+official Codex CLI. Code Lite creates its token file itself through the OAuth
+authorization-code flow with PKCE.
 
 Security note: token values are never logged. Helpers here only ever report
 presence/length for diagnostics, never the token text itself.
@@ -495,11 +494,11 @@ def load_auth_tokens(config: ProviderConfig, *, now: datetime | None = None) -> 
 
     if not access_token:
         raise AuthError(
-            f"ChatGPT access token not found in {path}. Run `codex login` to sign in."
+            f"ChatGPT access token not found in {path}. Sign in from Code Lite."
         )
     if not account_id:
         raise AuthError(
-            f"ChatGPT account id not found in {path}. Run `codex login` to sign in again."
+            f"ChatGPT account id not found in {path}. Sign in from Code Lite again."
         )
 
     return EffectiveAuth(

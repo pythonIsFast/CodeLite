@@ -35,6 +35,7 @@ from ..config import AppConfig
 from ..db.store import Conversation, Store
 from ..permission.manager import PermissionManager
 from ..permission.modes import Mode
+from ..provider.config import ProviderConfig
 from ..provider.session import Session
 
 logger = logging.getLogger(__name__)
@@ -72,7 +73,9 @@ class Runtime:
     def __init__(self, config: AppConfig | None = None) -> None:
         self.config = config or AppConfig()
         self.store = Store(self.config.db_path)
-        self.session = Session()
+        self.session = Session(
+            ProviderConfig(auth_file_path=self.config.data_dir / "auth.json")
+        )
         self._conversations: dict[str, ConversationRuntime] = {}
         self._lock = threading.Lock()
 

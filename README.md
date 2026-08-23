@@ -4,10 +4,8 @@ A lightweight, resource-efficient coding agent — built to stay small on disk
 and dependencies while doing the job of heavier tools.
 
 Code Lite runs on your existing **ChatGPT** subscription instead of API
-credits. It signs you in directly and stores its OAuth tokens at
-`~/.codex/auth.json`, while remaining compatible with tokens created by the
-official [Codex CLI](https://github.com/openai/codex). It opens in a
-**native window** (the OS's own webview —
+credits. It signs you in directly and stores its own OAuth tokens separately
+from Codex. It opens in a **native window** (the OS's own webview —
 no bundled Chromium, no Electron), talks to your files and shell through a
 small set of tools, and gates risky actions behind a permission system you
 control.
@@ -40,9 +38,9 @@ but only from the project root.)
 
 On first launch, choose **Sign in with ChatGPT**. Code Lite opens the ChatGPT
 login in your browser, receives the local OAuth callback, and stores the tokens
-in the same `~/.codex/auth.json` format as the official Codex CLI. If that file
-already contains Codex tokens, Code Lite uses them immediately. You can switch
-accounts later from Settings.
+in its own data directory (`~/.local/share/codelite/auth.json` by default).
+It never reads or overwrites the Codex CLI's auth file. You can switch accounts
+later from Settings.
 
 Useful flags:
 
@@ -100,8 +98,9 @@ answer instead of a spinner.
 
 ## What works
 
-- **Token refresh** — reads `~/.codex/auth.json` (or `$CODEX_HOME`), refreshes
-  the access token when it nears expiry, writes it straight back.
+- **Token refresh** — reads Code Lite's own `auth.json` (under
+  `$CODELITE_HOME`, `$XDG_DATA_HOME/codelite`, or the default data directory),
+  refreshes the access token when it nears expiry, and writes it straight back.
 - **Streaming agent loop** — model turn → tool calls → results → repeat, with
   text, tool calls and results streaming into the window live. There is no
   turn limit: a run ends when the model stops calling tools, when you stop it,

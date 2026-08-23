@@ -65,10 +65,13 @@ REFRESH_INTERVAL_SECONDS = 55 * 60
 
 
 def default_auth_file_path() -> Path:
-    """Resolve ``~/.codex/auth.json``, honoring ``$CODEX_HOME`` like Codex CLI does."""
-    codex_home = os.environ.get("CODEX_HOME")
-    base = Path(codex_home) if codex_home else Path.home() / ".codex"
-    return base / AUTH_FILENAME
+    """Resolve Code Lite's own auth file, separate from Codex credentials."""
+    codelite_home = os.environ.get("CODELITE_HOME")
+    if codelite_home:
+        return Path(codelite_home) / AUTH_FILENAME
+    xdg = os.environ.get("XDG_DATA_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".local" / "share"
+    return base / "codelite" / AUTH_FILENAME
 
 
 @dataclass
