@@ -85,7 +85,7 @@ You can switch modes mid-conversation from the window's header, and grant
 ## Tools
 
 `read_file`, `write_file`, `edit_file`, `list_dir`, `grep`, `find_files`,
-`shell`, `todo_write`.
+`generate_image`, `shell`, `todo_write`.
 
 Search is implemented in pure Python rather than shelling out to
 `grep`/`ripgrep`, so it needs no permission prompt and behaves the same on
@@ -95,6 +95,10 @@ conversation's workspace and rejected if it escapes it.
 `todo_write` is how the agent records a multi-step plan; the list is rendered
 in the conversation, so "what is it doing and how far along is it" has a real
 answer instead of a spinner.
+
+`generate_image` uses the current ChatGPT sign-in to create an image. The
+agent supplies a prompt and a workspace-relative output path; saving it uses
+the same file-write permission policy as other generated files.
 
 ## What works
 

@@ -36,6 +36,8 @@ style, naming and comment density.
 file when you really are replacing all of it.
 - Every path you pass to a tool is relative to the workspace root. You cannot \
 reach outside it.
+- When the user asks for a new image asset, use `generate_image` with a precise \
+prompt and a workspace-relative output path. It saves the generated image there.
 - Each `shell` call is a fresh process, but the working directory carries over: \
 `cd build` affects your later shell calls. The tool result tells you when the \
 directory moved.

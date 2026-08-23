@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ..permission.manager import PermissionManager
+from ..provider.session import Session
 
 
 class PathOutsideWorkspace(Exception):
@@ -43,6 +44,7 @@ class ToolContext:
 
     workspace: Path
     permissions: PermissionManager
+    session: Session
     task_prompt: str = ""
     shell_timeout_seconds: int = 120
     cwd: Path | None = None

@@ -456,7 +456,7 @@ const CHEVRON_ICON =
 function toolCategory(name) {
   if (name === "shell") return "shell";
   if (name === "grep" || name === "find_files") return "search";
-  if (name === "write_file" || name === "edit_file") return "write";
+  if (name === "write_file" || name === "edit_file" || name === "generate_image") return "write";
   return "read";
 }
 

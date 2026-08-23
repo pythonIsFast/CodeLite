@@ -24,6 +24,7 @@ from typing import Any
 
 from .base import Tool
 from .files import EDIT_FILE, LIST_DIR, READ_FILE, WRITE_FILE
+from .images import GENERATE_IMAGE
 from .search import FIND_FILES, GREP
 from .shell import SHELL
 from .todo import TODO_WRITE
@@ -35,6 +36,7 @@ TOOLS: tuple[Tool, ...] = (
     LIST_DIR,
     GREP,
     FIND_FILES,
+    GENERATE_IMAGE,
     SHELL,
     TODO_WRITE,
 )
