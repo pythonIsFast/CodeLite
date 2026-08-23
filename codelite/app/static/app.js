@@ -1196,6 +1196,41 @@ async function uploadAttachment(file) {
   return data;
 }
 
+function clipboardFiles(clipboardData) {
+  if (!clipboardData) return [];
+  const files = [];
+  const seen = new Set();
+  const add = (file) => {
+    if (!(file instanceof File)) return;
+    const key = `${file.name}:${file.size}:${file.type}:${file.lastModified}`;
+    if (!seen.has(key)) { seen.add(key); files.push(file); }
+  };
+  for (const file of clipboardData.files || []) add(file);
+  for (const item of clipboardData.items || []) {
+    if (item.kind === "file") add(item.getAsFile());
+  }
+  return files;
+}
+
+async function navigatorClipboardFiles() {
+  if (!navigator.clipboard?.read) return [];
+  try {
+    const items = await navigator.clipboard.read();
+    const files = [];
+    for (const item of items) {
+      const type = item.types.find((candidate) => !candidate.startsWith("text/"));
+      if (!type) continue;
+      const blob = await item.getType(type);
+      const extension = type === "image/png" ? "png" : type === "image/jpeg" ? "jpg" : "bin";
+      files.push(new File([blob], `pasted-file.${extension}`, { type }));
+    }
+    return files;
+  } catch {
+    // Clipboard read permission is unavailable in some WebView backends.
+    return [];
+  }
+}
+
 async function addPastedFiles(files) {
   if (!files.length || !state.active || state.busy) return;
   state.uploadsInProgress += files.length;
@@ -1305,11 +1340,21 @@ function wireEvents() {
     el.prompt.style.height = `${Math.min(el.prompt.scrollHeight, 220)}px`;
   });
 
-  el.prompt.addEventListener("paste", (event) => {
-    const files = event.clipboardData ? [...event.clipboardData.files] : [];
-    if (!files.length) return;
-    event.preventDefault();
-    addPastedFiles(files);
+  document.addEventListener("paste", (event) => {
+    const files = clipboardFiles(event.clipboardData);
+    if (files.length) {
+      event.preventDefault();
+      addPastedFiles(files);
+      return;
+    }
+    // WebKitGTK sometimes omits files from the paste event but exposes them
+    // through the asynchronous Clipboard API while the key gesture is active.
+    const types = [...(event.clipboardData?.types || [])];
+    if (types.some((type) => !type.startsWith("text/"))) {
+      navigatorClipboardFiles().then((clipboardFiles) => {
+        if (clipboardFiles.length) addPastedFiles(clipboardFiles);
+      });
+    }
   });
 
   el.stopRun.addEventListener("click", async () => {
