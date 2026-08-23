@@ -19,6 +19,7 @@ const el = {
   workspace: $("chat-workspace"),
   modelSelect: $("model-select"),
   modeSelect: $("mode-select"),
+  compactContext: $("compact-context"),
   composer: $("composer"),
   prompt: $("prompt"),
   attachments: $("composer-attachments"),
@@ -831,6 +832,7 @@ function setBusy(busy, label = "Working…") {
   el.statusBar.hidden = !busy;
   el.statusText.textContent = label;
   el.send.disabled = busy || !state.active;
+  el.compactContext.disabled = busy || !state.active;
 }
 
 function resetLive() {
@@ -1049,11 +1051,21 @@ function connectStream(conversationId) {
   on("compaction_started", () => setBusy(true, "Compacting earlier conversation…"));
   on("compacted", (data) => {
     setBusy(true);
+    if (state.active && Number.isFinite(data.context_tokens)) {
+      state.active.context_tokens = data.context_tokens;
+      updateUsage({
+        contextTokens: data.context_tokens,
+        contextWindow: state.active.context_window,
+        totalTokens: state.active.total_tokens,
+      });
+    }
     toast(`Compacted earlier context; kept the latest ${data.kept_items} items.`);
   });
   on("compaction_failed", (data) => {
     toast(`Could not compact context: ${data.message}`, true);
   });
+  on("compaction_skipped", (data) => toast(data.message || "Nothing to compact."));
+  on("compaction_finished", () => setBusy(false));
 
   on("todos", (data) => {
     const todos = data.todos || [];
@@ -1469,6 +1481,15 @@ function wireEvents() {
   el.stopRun.addEventListener("click", async () => {
     if (!state.active) return;
     await post(`/api/conversations/${state.active.id}/cancel`).catch(() => {});
+  });
+
+  el.compactContext.addEventListener("click", async () => {
+    if (!state.active || state.busy) return;
+    setBusy(true, "Compacting earlier conversation…");
+    await post(`/api/conversations/${state.active.id}/compact`).catch((error) => {
+      setBusy(false);
+      toast(error.message, true);
+    });
   });
 
   el.modeSelect.addEventListener("change", async () => {

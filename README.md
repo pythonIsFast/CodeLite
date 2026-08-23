@@ -86,7 +86,8 @@ You can switch modes mid-conversation from the window's header, and grant
 
 `read_file`, `write_file`, `edit_file`, `list_dir`, `grep`, `find_files`,
 `code_intelligence`, `extensions`, `project_memory`, `generate_image`,
-`showcase_file`, `view_image`, `shell`, `todo_write`.
+`showcase_file`, `view_image`, `web_search`, `web_fetch`, `shell`,
+`todo_write`, plus project-local tools.
 
 Search is implemented in pure Python rather than shelling out to
 `grep`/`ripgrep`, so it needs no permission prompt and behaves the same on
@@ -104,6 +105,42 @@ the same file-write permission policy as other generated files.
 `showcase_file` embeds a workspace file in the chat (with native previews for
 images, video, and audio). `view_image` supplies the actual image pixels to
 the agent for one turn without persisting or repeatedly resending the data.
+
+`web_search` uses Bing's public HTML results and `web_fetch` converts public
+HTML, text, or JSON pages into bounded text. Both use only Python's standard
+library. Downloads are capped at 2 MB, tool output is capped, and private,
+local, credential-bearing, and reserved network destinations are rejected.
+
+### Local tools and plugin hooks
+
+Project-local Python extensions live in `.codelite/tools/*.py` or
+`.codelite/plugins/*.py`. Code Lite reads only literal `TOOL` and `HOOKS`
+metadata during discovery. The module itself is imported only when its tool or
+hook is first needed, and that import goes through the shell-command permission
+policy because local extension code has the same power as any Python program.
+
+```python
+TOOL = {
+    "name": "hello",
+    "description": "Return a project-specific greeting.",
+    "parameters": {
+        "type": "object",
+        "properties": {"name": {"type": "string"}},
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+}
+
+def run(arguments, context):
+    return f"Hello {arguments['name']}"
+```
+
+Plugins declare `HOOKS = ["before_tool", "after_tool"]` and implement
+`before_tool(name, arguments, context)` and/or
+`after_tool(name, arguments, output, context)`. A before hook may return a
+replacement argument dictionary; an after hook may return replacement output.
+Returning `None` leaves the value unchanged. Extensions are limited to 32
+files per project and cannot replace built-in tool names.
 
 ## Project intelligence
 
@@ -177,6 +214,9 @@ existing command permission policy.
   Code Lite replaces older working context with a self-contained summary and
   keeps the newest exchanges intact. The full original transcript remains
   visible and stored locally.
+- **Manual context compaction** — the `Compact` button beside the permission
+  mode frees working context on demand while preserving the complete visible
+  transcript.
 - **Lazy project intelligence** — bounded repository instructions and project
   memory, on-demand skills, optional MCP stdio tools, and persistent
   language-server intelligence without adding Python dependencies.

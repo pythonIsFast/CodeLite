@@ -33,6 +33,7 @@ from .shell import SHELL
 from .showcase import SHOWCASE_FILE
 from .todo import TODO_WRITE
 from .vision import VIEW_IMAGE
+from .web import WEB_FETCH, WEB_SEARCH
 
 TOOLS: tuple[Tool, ...] = (
     READ_FILE,
@@ -49,6 +50,8 @@ TOOLS: tuple[Tool, ...] = (
     SHELL,
     TODO_WRITE,
     VIEW_IMAGE,
+    WEB_SEARCH,
+    WEB_FETCH,
 )
 
 _BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}

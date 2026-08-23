@@ -39,6 +39,7 @@ from ..permission.manager import PermissionDenied, PermissionManager
 from ..provider.session import Session
 from ..provider.sse import iterate_server_sent_events
 from ..project.context import build_project_context
+from ..project.plugins import LocalExtensionHost
 from ..tools import registry
 from ..tools.base import ToolError
 from ..tools.context import PathOutsideWorkspace, ToolContext
@@ -79,11 +80,26 @@ class AgentRunner:
         self._cancelled = threading.Event()
         self._run_tokens_used = 0
         self._project_context = ""
+        self._local_extensions = LocalExtensionHost(
+            Path(self._conversation.workspace), set(registry.names())
+        )
 
     def cancel(self) -> None:
         """Ask the run to stop, and release anything blocked on a permission prompt."""
         self._cancelled.set()
         self._permissions.cancel_pending()
+
+    def compact(self) -> None:
+        """Manually compact this conversation without adding a chat message."""
+        self._run_tokens_used = 0
+        try:
+            if self._maybe_compact_history(force=True) is None:
+                self._publish(
+                    "compaction_skipped",
+                    {"message": "There is not enough uncompacted history yet."},
+                )
+        finally:
+            self._publish("compaction_finished", {})
 
     @property
     def cancelled(self) -> bool:
@@ -98,6 +114,9 @@ class AgentRunner:
         # per turn only adds latency and token-accounting work.
         self._project_context = build_project_context(
             Path(self._conversation.workspace), self._config.data_dir
+        )
+        self._local_extensions = LocalExtensionHost(
+            Path(self._conversation.workspace), set(registry.names())
         )
         conversation_id = self._conversation.id
         user_item = {
@@ -249,14 +268,14 @@ class AgentRunner:
             *tail,
         ]
 
-    def _maybe_compact_history(self) -> list[dict[str, Any]] | None:
+    def _maybe_compact_history(self, force: bool = False) -> list[dict[str, Any]] | None:
         """Summarize older history before the input window becomes a hard stop.
 
         The original items deliberately stay in the database for the UI. Only
         the model's working set is replaced, and the summary is refreshed from
         the previous summary plus the newly accumulated items on later passes.
         """
-        if not self._needs_compaction():
+        if not force and not self._needs_compaction():
             return None
 
         history = self._store.load_items(self._conversation.id)
@@ -316,7 +335,11 @@ class AgentRunner:
         self._conversation.context_tokens = 0
         self._publish(
             "compacted",
-            {"compacted_items": compacted_count, "kept_items": keep},
+            {
+                "compacted_items": compacted_count,
+                "kept_items": keep,
+                "context_tokens": 0,
+            },
         )
         return self._effective_history(history)
 
@@ -424,7 +447,10 @@ class AgentRunner:
                 self._project_context,
             ),
             "input": items,
-            "tools": registry.to_responses_tools(),
+            "tools": [
+                *registry.to_responses_tools(),
+                *(tool.to_responses_tool() for tool in self._local_extensions.tools()),
+            ],
         }
         chunks = self._session.send_responses(body, stream=True)
         if isinstance(chunks, dict):  # Defensive: stream=True should never buffer.
@@ -540,10 +566,11 @@ class AgentRunner:
         if self.cancelled:
             return "The run was cancelled before this tool could execute.", False
 
-        tool = registry.get(name)
+        tool = registry.get(name) or self._local_extensions.get(name)
         if tool is None:
+            available = [*registry.names(), *self._local_extensions.names()]
             return (
-                f"Unknown tool `{name}`. Available tools: {', '.join(registry.names())}.",
+                f"Unknown tool `{name}`. Available tools: {', '.join(available)}.",
                 False,
             )
 
@@ -559,7 +586,9 @@ class AgentRunner:
             return f"The arguments for `{name}` must be a JSON object.", False
 
         try:
+            arguments = self._local_extensions.before_tool(name, arguments, context)
             output = tool.run(arguments, context)
+            output = self._local_extensions.after_tool(name, arguments, output, context)
         except PermissionDenied as denied:
             return denied.message, False
         except (ToolError, PathOutsideWorkspace) as error:

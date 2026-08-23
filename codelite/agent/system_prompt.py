@@ -50,6 +50,10 @@ skills and MCP integrations. Save only stable, reusable facts with \
 - Repository instructions from `AGENTS.md` and `CLAUDE.md`, when present below, \
 are already loaded before your first turn. Follow the instructions applicable to \
 the files you touch before starting work.
+- Use `web_search` for current public information and `web_fetch` to read a \
+specific public page. Project-local tools may also appear in your tool list; \
+their code is permission-gated when first used, and local plugins may inspect \
+or transform tool calls through hooks.
 - Each `shell` call is a fresh process, but the working directory carries over: \
 `cd build` affects your later shell calls. The tool result tells you when the \
 directory moved.

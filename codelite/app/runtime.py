@@ -211,6 +211,32 @@ class Runtime:
             state.thread = thread
             thread.start()
 
+    def start_compaction(self, conversation: Conversation) -> None:
+        """Compact one conversation in the background like a normal run."""
+        state = self._state_for(conversation)
+        with state.lock:
+            if state.busy:
+                raise RunInProgress("A run is already in progress in this conversation.")
+            runner = AgentRunner(
+                session=self.session,
+                store=self.store,
+                conversation=conversation,
+                permissions=state.permissions,
+                publish=lambda event, data, cid=conversation.id: self.publish(
+                    cid, event, data
+                ),
+                config=self.config,
+            )
+            state.runner = runner
+            thread = threading.Thread(
+                target=self._compact_and_report,
+                args=(runner, conversation.id),
+                name=f"codelite-compact-{conversation.id[:8]}",
+                daemon=True,
+            )
+            state.thread = thread
+            thread.start()
+
     def _run_and_report(
         self,
         runner: AgentRunner,
@@ -221,6 +247,12 @@ class Runtime:
         """Run a turn, then publish the plan usage the request just revealed."""
         try:
             runner.run(user_text, attachments)
+        finally:
+            self.refresh_plan_usage(publish_to=cid)
+
+    def _compact_and_report(self, runner: AgentRunner, cid: str) -> None:
+        try:
+            runner.compact()
         finally:
             self.refresh_plan_usage(publish_to=cid)
 

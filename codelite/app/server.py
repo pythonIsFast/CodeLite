@@ -384,6 +384,17 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
     def cancel_run(conversation_id: str):
         return jsonify({"cancelled": rt().cancel_run(conversation_id)})
 
+    @app.post("/api/conversations/<conversation_id>/compact")
+    def compact_conversation(conversation_id: str):
+        conversation, error = _conversation_or_404(conversation_id)
+        if error:
+            return error
+        try:
+            rt().start_compaction(conversation)
+        except RunInProgress as busy:
+            return jsonify({"error": str(busy)}), 409
+        return jsonify({"started": True}), 202
+
     @app.get("/api/conversations/<conversation_id>/events")
     def events(conversation_id: str):
         conversation, error = _conversation_or_404(conversation_id)
