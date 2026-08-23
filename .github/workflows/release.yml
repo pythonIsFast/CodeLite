@@ -142,6 +142,13 @@ jobs:
           dpkg-deb --info "$deb"
           dpkg-deb --contents "$deb"
 
+          # A misspelled dependency builds a perfectly valid .deb that cannot
+          # be installed -- the failure only shows up on a user's machine, as
+          # an "is but not installable" message that names the wrong package.
+          # Resolving the dependencies here is what turns that into a red CI
+          # run instead. --simulate installs nothing.
+          sudo apt-get install --simulate --no-install-recommends "./$deb"
+
       - uses: actions/upload-artifact@v4
         with:
           name: linux
@@ -266,7 +273,7 @@ jobs:
             echo "If the window does not open, install the engine:"
             echo
             echo '```bash'
-            echo "sudo apt install python3-gi gir1.2-webkit2gtk-4.1"
+            echo "sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1"
             echo '```'
             echo
             echo "> Windows builds are not code-signed, so SmartScreen may warn"

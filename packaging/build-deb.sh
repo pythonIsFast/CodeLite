@@ -29,8 +29,12 @@ install -Dm644 "$root/codelite/app/static/icon.png" \
 install -Dm644 "$root/LICENSE" "$stage/usr/share/doc/code-lite/copyright"
 install -Dm644 "$root/NOTICE" "$stage/usr/share/doc/code-lite/NOTICE"
 
-# webkit2gtk 4.1 is what current distributions ship; 4.0 is accepted as an
-# alternative so the package still installs on older releases.
+# The typelib package is `gir1.2-webkit2-4.1`, not `gir1.2-webkit2gtk-4.1`:
+# the *library* is libwebkit2gtk, but the introspection data drops the "gtk".
+# Getting this wrong makes the package uninstallable with a confusing "is but
+# not installable" message, so it is spelled out here rather than guessed.
+# 4.0 stays as an alternative for older releases; pywebview asks for WebKit2
+# 4.1 first and falls back to 4.0.
 mkdir -p "$stage/DEBIAN"
 cat > "$stage/DEBIAN/control" <<EOF
 Package: code-lite
@@ -39,7 +43,7 @@ Section: devel
 Priority: optional
 Architecture: all
 Maintainer: pythonIsFast <pythonIsFast@users.noreply.github.com>
-Depends: python3 (>= 3.10), python3-gi, gir1.2-webkit2gtk-4.1 | gir1.2-webkit2gtk-4.0
+Depends: python3 (>= 3.10), python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0
 Homepage: https://github.com/pythonIsFast/CodeLite
 Description: Lightweight coding agent for your ChatGPT subscription
  Code Lite is a small coding agent that opens in a native window and works on
