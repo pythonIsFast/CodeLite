@@ -25,6 +25,7 @@ of a desktop window, not a service.
 
 from __future__ import annotations
 
+import json
 import logging
 import tempfile
 import uuid
@@ -38,6 +39,13 @@ from ..config import AppConfig, context_window_for
 from ..permission.modes import Mode
 from ..provider.auth import AuthError
 from ..provider.login import ChatGPTLoginManager
+from ..project.context import (
+    LSP_CONFIG_PATH,
+    MAX_MEMORY_CHARS,
+    MCP_CONFIG_PATH,
+    MEMORY_PATH,
+    discover_skills,
+)
 from ..tools import registry
 from .runtime import Runtime, RunInProgress
 
@@ -225,6 +233,72 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         rt().delete_conversation(conversation_id)
         return jsonify({"deleted": conversation_id})
 
+    @app.get("/api/conversations/<conversation_id>/project-settings")
+    def project_settings(conversation_id: str):
+        conversation, error = _conversation_or_404(conversation_id)
+        if error:
+            return error
+        workspace = Path(conversation.workspace).resolve()
+
+        def read_or(relative: Path, fallback: str) -> str:
+            path = (workspace / relative).resolve()
+            if workspace not in path.parents:
+                return fallback
+            try:
+                return path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                return fallback
+
+        return jsonify(
+            {
+                "memory": read_or(MEMORY_PATH, ""),
+                "mcp": read_or(MCP_CONFIG_PATH, '{\n  "mcpServers": {}\n}\n'),
+                "lsp": read_or(LSP_CONFIG_PATH, '{\n  "servers": {}\n}\n'),
+                "skills": [
+                    skill.as_dict()
+                    for skill in discover_skills(workspace, rt().config.data_dir)
+                ],
+                "project_dir": str(workspace / ".codelite"),
+            }
+        )
+
+    @app.put("/api/conversations/<conversation_id>/project-settings/<kind>")
+    def save_project_settings(conversation_id: str, kind: str):
+        conversation, error = _conversation_or_404(conversation_id)
+        if error:
+            return error
+        content = _body().get("content")
+        if not isinstance(content, str):
+            return jsonify({"error": "`content` must be a string."}), 400
+        paths = {"memory": MEMORY_PATH, "mcp": MCP_CONFIG_PATH, "lsp": LSP_CONFIG_PATH}
+        relative = paths.get(kind)
+        if relative is None:
+            return jsonify({"error": "Unknown project setting."}), 404
+        if kind == "memory":
+            if len(content) > MAX_MEMORY_CHARS:
+                return jsonify(
+                    {"error": f"Project memory is limited to {MAX_MEMORY_CHARS:,} characters."}
+                ), 400
+        else:
+            try:
+                parsed = json.loads(content)
+            except ValueError as exc:
+                return jsonify({"error": f"Invalid JSON: {exc}"}), 400
+            required_key = "mcpServers" if kind == "mcp" else "servers"
+            if not isinstance(parsed, dict) or not isinstance(parsed.get(required_key), dict):
+                return jsonify({"error": f"Config requires a `{required_key}` object."}), 400
+            content = json.dumps(parsed, indent=2) + "\n"
+        workspace = Path(conversation.workspace).resolve()
+        target = (workspace / relative).resolve()
+        if workspace not in target.parents:
+            return jsonify({"error": "Project setting path leaves the workspace."}), 400
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        except OSError as exc:
+            return jsonify({"error": f"Could not save {relative}: {exc}"}), 500
+        return jsonify({"saved": str(relative), "content": content})
+
     @app.post("/api/conversations/<conversation_id>/uploads")
     def upload_file(conversation_id: str):
         """Accept a user-pasted file and save it inside that chat's workspace."""
@@ -236,7 +310,9 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
             return jsonify({"error": "Attach one file in the `file` field."}), 400
         filename = secure_filename(uploaded.filename) or "pasted-file"
         workspace = Path(conversation.workspace).resolve()
-        upload_dir = workspace / "uploads"
+        upload_dir = (workspace / "uploads").resolve()
+        if workspace not in upload_dir.parents:
+            return jsonify({"error": "Upload directory leaves the workspace."}), 400
         upload_dir.mkdir(parents=True, exist_ok=True)
         target = upload_dir / f"{uuid.uuid4().hex}_{filename}"
         temporary = None

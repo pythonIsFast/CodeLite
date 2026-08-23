@@ -45,6 +45,7 @@ class ToolContext:
     workspace: Path
     permissions: PermissionManager
     session: Session
+    data_dir: Path = Path(".")
     #: The conversation's selected Codex model, used by tools that make a model call.
     model: str = ""
     task_prompt: str = ""

@@ -737,11 +737,30 @@ button { cursor: pointer; }
 .auth-status { min-height: 20px; margin: 12px 0 0 !important; color: var(--text-dim); font-size: 12.5px; }
 .auth-status.error { color: var(--danger); }
 
-.settings-dialog { max-width: 480px; }
+.settings-dialog {
+  max-width: 560px;
+  max-height: min(760px, calc(100vh - 48px));
+  overflow-y: auto;
+}
 .settings-section { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
 .settings-section h3 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); }
 .account-name { margin: 0; font-weight: 600; }
 .account-detail { margin: 2px 0 14px; color: var(--text-dim); font-size: 13px; }
+.settings-section textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  padding: 8px 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+  outline: none;
+}
+.settings-section textarea:focus { border-color: var(--accent); }
+.settings-section .field { margin: 12px 0 7px; }
 
 .perm-kind { margin: 0 0 10px; color: var(--text-dim); font-size: 13px; }
 .perm-scope { margin: -4px 0 12px; color: var(--text-faint); font-size: 12px; }

@@ -85,7 +85,8 @@ You can switch modes mid-conversation from the window's header, and grant
 ## Tools
 
 `read_file`, `write_file`, `edit_file`, `list_dir`, `grep`, `find_files`,
-`generate_image`, `showcase_file`, `view_image`, `shell`, `todo_write`.
+`code_intelligence`, `extensions`, `project_memory`, `generate_image`,
+`showcase_file`, `view_image`, `shell`, `todo_write`.
 
 Search is implemented in pure Python rather than shelling out to
 `grep`/`ripgrep`, so it needs no permission prompt and behaves the same on
@@ -101,8 +102,58 @@ agent supplies a prompt and a workspace-relative output path; saving it uses
 the same file-write permission policy as other generated files.
 
 `showcase_file` embeds a workspace file in the chat (with native previews for
-images, video, and audio). `view_image` sends an image to the signed-in model
-for a visual description the agent can use in its next step.
+images, video, and audio). `view_image` supplies the actual image pixels to
+the agent for one turn without persisting or repeatedly resending the data.
+
+## Project intelligence
+
+Code Lite keeps these features file-based, bounded, and lazy so they add
+almost nothing to startup time, install size, or token usage:
+
+- **Project memory** lives in `.codelite/memory.md`, is limited to 2,500
+  characters, and is shared by every chat in that workspace. It is intended
+  for stable commands, conventions, and architecture decisions.
+- **Skills** are Markdown files at `.codelite/skills/*.md` or
+  `.codelite/skills/<name>/SKILL.md`. User-wide skills can use the same layout
+  under the Code Lite data directory's `skills/` folder. Only names and short
+  descriptions enter the system prompt; full instructions load on demand.
+- **MCP servers** are configured in `.codelite/mcp.json` and start only when
+  the agent lists or calls one of their tools. One stdio process is then reused.
+- **LSP intelligence** automatically uses installed `pyright-langserver`,
+  `typescript-language-server`, `rust-analyzer`, `gopls`, or `clangd`.
+  Custom servers go in `.codelite/lsp.json` and start only on first use.
+
+Example MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "example": {
+      "command": "example-mcp-server",
+      "args": ["--stdio"]
+    }
+  }
+}
+```
+
+Example custom LSP configuration:
+
+```json
+{
+  "servers": {
+    "custom-python": {
+      "command": ".venv/bin/pyright-langserver",
+      "args": ["--stdio"],
+      "extensions": [".py"],
+      "languageId": "python"
+    }
+  }
+}
+```
+
+Memory, MCP, and LSP configuration are also editable from Settings while a
+project chat is open. Starting an external MCP/LSP process goes through the
+existing command permission policy.
 
 ## What works
 
@@ -122,6 +173,9 @@ for a visual description the agent can use in its next step.
   Code Lite replaces older working context with a self-contained summary and
   keeps the newest exchanges intact. The full original transcript remains
   visible and stored locally.
+- **Lazy project intelligence** — bounded project memory, on-demand skills,
+  optional MCP stdio tools, and persistent language-server intelligence without
+  adding Python dependencies.
 - **Plan usage** — how much of your weekly ChatGPT allowance is gone, read
   from the `x-codex-*` response headers Codex attaches to every `/responses`
   call. There is no endpoint for this, so the figure only refreshes when a
@@ -162,7 +216,9 @@ run.py            start the app from anywhere
 codelite/
   provider/       stdlib-only: OAuth, Codex transport, SSE, images, limits, proxy
   agent/          loop.py, system_prompt.py, judge.py
-  tools/          base, context, files, search, shell, todo, registry
+  tools/          built-in tools plus memory, extensions, and code intelligence
+  integrations/   dependency-free lazy MCP and LSP stdio clients
+  project/        bounded project memory and skill discovery
   permission/     modes.py (the four modes), manager.py (the gate)
   db/             SQLite store; history is stored as Responses-API items
   app/            runtime.py (live state), server.py (Flask), window.py,

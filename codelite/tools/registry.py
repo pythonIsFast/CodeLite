@@ -23,8 +23,11 @@ from __future__ import annotations
 from typing import Any
 
 from .base import Tool
+from .code_intelligence import CODE_INTELLIGENCE
+from .extensions import EXTENSIONS
 from .files import EDIT_FILE, LIST_DIR, READ_FILE, WRITE_FILE
 from .images import GENERATE_IMAGE
+from .memory import PROJECT_MEMORY
 from .search import FIND_FILES, GREP
 from .shell import SHELL
 from .showcase import SHOWCASE_FILE
@@ -38,6 +41,9 @@ TOOLS: tuple[Tool, ...] = (
     LIST_DIR,
     GREP,
     FIND_FILES,
+    CODE_INTELLIGENCE,
+    EXTENSIONS,
+    PROJECT_MEMORY,
     GENERATE_IMAGE,
     SHOWCASE_FILE,
     SHELL,

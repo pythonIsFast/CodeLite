@@ -163,6 +163,27 @@
         <button type="button" class="btn" id="settings-login">Sign in again</button>
         <p class="auth-status" id="settings-auth-status"></p>
       </section>
+      <section class="settings-section" id="project-settings" hidden>
+        <h3>Project intelligence</h3>
+        <p class="account-detail" id="project-settings-path"></p>
+        <label class="field">
+          <span>Project memory</span>
+          <textarea id="project-memory" rows="5" spellcheck="false"
+                    placeholder="Stable commands, conventions, and architecture decisions"></textarea>
+        </label>
+        <button type="button" class="btn" id="project-memory-save">Save memory</button>
+        <p class="account-detail" id="project-skills"></p>
+        <label class="field">
+          <span>MCP servers (.codelite/mcp.json)</span>
+          <textarea id="project-mcp-config" rows="6" spellcheck="false"></textarea>
+        </label>
+        <button type="button" class="btn" id="project-mcp-save">Save MCP config</button>
+        <label class="field">
+          <span>Language servers (.codelite/lsp.json)</span>
+          <textarea id="project-lsp-config" rows="6" spellcheck="false"></textarea>
+        </label>
+        <button type="button" class="btn" id="project-lsp-save">Save LSP config</button>
+      </section>
     </div>
   </div>
 

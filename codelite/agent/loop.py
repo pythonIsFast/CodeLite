@@ -38,6 +38,7 @@ from ..db.store import Conversation, Store
 from ..permission.manager import PermissionDenied, PermissionManager
 from ..provider.session import Session
 from ..provider.sse import iterate_server_sent_events
+from ..project.context import build_project_context
 from ..tools import registry
 from ..tools.base import ToolError
 from ..tools.context import PathOutsideWorkspace, ToolContext
@@ -113,6 +114,7 @@ class AgentRunner:
             workspace=Path(self._conversation.workspace),
             permissions=self._permissions,
             session=self._session,
+            data_dir=self._config.data_dir,
             model=self._conversation.model,
             task_prompt=user_text,
             shell_timeout_seconds=self._config.shell_timeout_seconds,
@@ -410,7 +412,11 @@ class AgentRunner:
         body = {
             "model": self._conversation.model,
             "instructions": system_prompt.build(
-                self._permissions.mode, self._conversation.workspace
+                self._permissions.mode,
+                self._conversation.workspace,
+                build_project_context(
+                    Path(self._conversation.workspace), self._config.data_dir
+                ),
             ),
             "input": items,
             "tools": registry.to_responses_tools(),

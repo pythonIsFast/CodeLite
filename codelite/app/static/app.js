@@ -59,6 +59,15 @@ const el = {
   accountName: $("account-name"),
   accountDetail: $("account-detail"),
   settingsAuthStatus: $("settings-auth-status"),
+  projectSettings: $("project-settings"),
+  projectSettingsPath: $("project-settings-path"),
+  projectMemory: $("project-memory"),
+  projectMemorySave: $("project-memory-save"),
+  projectSkills: $("project-skills"),
+  projectMcpConfig: $("project-mcp-config"),
+  projectMcpSave: $("project-mcp-save"),
+  projectLspConfig: $("project-lsp-config"),
+  projectLspSave: $("project-lsp-save"),
   authOverlay: $("auth-overlay"),
   authLogin: $("auth-login"),
   authStatus: $("auth-status"),
@@ -134,6 +143,30 @@ async function refreshAuth() {
   const auth = await get("/api/auth");
   renderAuth(auth);
   return auth;
+}
+
+async function loadProjectSettings() {
+  el.projectSettings.hidden = !state.active;
+  if (!state.active) return;
+  const settings = await get(`/api/conversations/${state.active.id}/project-settings`);
+  el.projectSettingsPath.textContent = settings.project_dir;
+  el.projectMemory.value = settings.memory || "";
+  el.projectMcpConfig.value = settings.mcp || "";
+  el.projectLspConfig.value = settings.lsp || "";
+  const skills = settings.skills || [];
+  el.projectSkills.textContent = skills.length
+    ? `Skills: ${skills.map((skill) => skill.name).join(", ")}`
+    : "Skills: none. Add Markdown skills under .codelite/skills/.";
+}
+
+async function saveProjectSetting(kind, textarea) {
+  if (!state.active) return;
+  const data = await api(`/api/conversations/${state.active.id}/project-settings/${kind}`, {
+    method: "PUT",
+    body: JSON.stringify({ content: textarea.value }),
+  });
+  textarea.value = data.content ?? textarea.value;
+  toast(`${kind.toUpperCase()} settings saved.`);
 }
 
 function stopAuthPolling() {
@@ -1383,9 +1416,19 @@ function wireEvents() {
   el.settingsLogin.addEventListener("click", startAuthLogin);
   el.settingsButton.addEventListener("click", async () => {
     await refreshAuth().catch((error) => toast(error.message, true));
+    await loadProjectSettings().catch((error) => toast(error.message, true));
     el.settingsOverlay.hidden = false;
   });
   el.settingsClose.addEventListener("click", () => { el.settingsOverlay.hidden = true; });
+  el.projectMemorySave.addEventListener("click", () => {
+    saveProjectSetting("memory", el.projectMemory).catch((error) => toast(error.message, true));
+  });
+  el.projectMcpSave.addEventListener("click", () => {
+    saveProjectSetting("mcp", el.projectMcpConfig).catch((error) => toast(error.message, true));
+  });
+  el.projectLspSave.addEventListener("click", () => {
+    saveProjectSetting("lsp", el.projectLspConfig).catch((error) => toast(error.message, true));
+  });
 
   el.composer.addEventListener("submit", (event) => {
     event.preventDefault();

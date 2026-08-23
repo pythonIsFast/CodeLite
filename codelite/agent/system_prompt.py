@@ -43,6 +43,10 @@ in the chat. Use `view_image` before describing or checking an image's visual \
 contents; it supplies the actual image to your next model turn.
 - User messages can list uploaded workspace files. Inspect relevant images with \
 `view_image` and use the appropriate file tools for other uploaded files.
+- Use `code_intelligence` for semantic diagnostics, definitions, references, \
+and symbols when a language server is available. Use `extensions` lazily for \
+skills and MCP integrations. Save only stable, reusable facts with \
+`project_memory`; keep it concise to protect context and usage limits.
 - Each `shell` call is a fresh process, but the working directory carries over: \
 `cd build` affects your later shell calls. The tool result tells you when the \
 directory moved.
@@ -88,8 +92,9 @@ run destructive commands unless the user clearly asked for that.\
 }
 
 
-def build(mode: Mode, workspace: str) -> str:
+def build(mode: Mode, workspace: str, project_context: str = "") -> str:
     """Assemble the system prompt for a run in ``mode`` inside ``workspace``."""
-    return "\n\n".join(
-        [BASE_PROMPT, f"Workspace root: {workspace}", MODE_NOTES[mode]]
-    )
+    sections = [BASE_PROMPT, f"Workspace root: {workspace}", MODE_NOTES[mode]]
+    if project_context:
+        sections.append(project_context)
+    return "\n\n".join(sections)
