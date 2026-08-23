@@ -59,7 +59,11 @@
                   autocomplete="off" spellcheck="false"></textarea>
         <div class="composer-attachments" id="composer-attachments" hidden></div>
         <div class="composer-foot">
-          <select id="mode-select" class="pill-select" title="Permission mode"></select>
+          <div class="custom-select pill-picker" data-select-picker>
+            <select id="mode-select" class="custom-select-source" title="Permission mode" tabindex="-1"></select>
+            <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false"></button>
+            <div class="custom-select-menu" role="listbox" hidden></div>
+          </div>
           <button type="button" class="compact-button" id="compact-context"
                   title="Compact conversation context">Compact</button>
           <span class="usage" id="usage" hidden title="">
@@ -83,7 +87,11 @@
             <span id="plan-label"></span>
           </span>
           <span class="composer-foot-spacer"></span>
-          <select id="model-select" class="pill-select" title="Model"></select>
+          <div class="custom-select pill-picker" data-select-picker>
+            <select id="model-select" class="custom-select-source" title="Model" tabindex="-1"></select>
+            <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false"></button>
+            <div class="custom-select-menu" role="listbox" hidden></div>
+          </div>
           <button type="submit" id="send" title="Send (Enter)">
             <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
               <path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="currentColor"
@@ -128,7 +136,11 @@
       </label>
       <label class="field">
         <span>Permission mode</span>
-        <select id="new-mode"></select>
+        <div class="custom-select field-picker" data-select-picker>
+          <select id="new-mode" class="custom-select-source" tabindex="-1"></select>
+          <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false"></button>
+          <div class="custom-select-menu" role="listbox" hidden></div>
+        </div>
       </label>
       <div class="perm-actions">
         <button class="btn ghost" id="new-cancel">Cancel</button>

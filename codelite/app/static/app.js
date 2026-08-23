@@ -1268,6 +1268,8 @@ async function openConversation(conversationId) {
   el.modeSelect.value = data.permission_mode;
   ensureModelOption(data.model);
   el.modelSelect.value = data.model;
+  renderCustomSelect(el.modeSelect);
+  renderCustomSelect(el.modelSelect);
 
   renderEntries(data.entries || []);
   renderConversationList();
@@ -1458,6 +1460,7 @@ function ensureModelOption(model) {
   option.value = model;
   option.textContent = model === "auto" ? "Auto (Luna decides)" : model;
   el.modelSelect.appendChild(option);
+  renderCustomSelect(el.modelSelect);
 }
 
 function fillModes(select, selected) {
@@ -1469,6 +1472,7 @@ function fillModes(select, selected) {
     select.appendChild(option);
   }
   if (selected) select.value = selected;
+  renderCustomSelect(select);
 }
 
 async function loadModels() {
@@ -1486,6 +1490,88 @@ async function loadModels() {
     option.textContent = model === "auto" ? "Auto (Luna decides)" : model;
     el.modelSelect.appendChild(option);
   }
+  renderCustomSelect(el.modelSelect);
+}
+
+/* -- Custom selects ------------------------------------------------------- */
+
+const customSelects = new Map();
+
+function closeCustomSelects(except = null) {
+  for (const picker of customSelects.values()) {
+    if (picker === except) continue;
+    picker.root.classList.remove("open");
+    picker.trigger.setAttribute("aria-expanded", "false");
+    picker.menu.hidden = true;
+  }
+}
+
+function renderCustomSelect(select) {
+  const picker = customSelects.get(select);
+  if (!picker) return;
+  const selected = select.selectedOptions[0];
+  picker.trigger.textContent = selected?.textContent || "Select…";
+  picker.menu.replaceChildren();
+  for (const option of select.options) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "custom-select-option";
+    button.setAttribute("role", "option");
+    button.setAttribute("aria-selected", String(option.selected));
+    button.textContent = option.textContent;
+    button.addEventListener("click", () => {
+      select.value = option.value;
+      renderCustomSelect(select);
+      closeCustomSelects();
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      picker.trigger.focus();
+    });
+    picker.menu.appendChild(button);
+  }
+}
+
+function changeCustomSelect(select, direction) {
+  const index = Math.max(0, [...select.options].findIndex((option) => option.selected));
+  const target = select.options[Math.max(0, Math.min(select.options.length - 1, index + direction))];
+  if (!target || target.selected) return;
+  select.value = target.value;
+  renderCustomSelect(select);
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function initCustomSelects() {
+  for (const root of document.querySelectorAll("[data-select-picker]")) {
+    const select = root.querySelector("select");
+    const trigger = root.querySelector(".custom-select-trigger");
+    const menu = root.querySelector(".custom-select-menu");
+    const picker = { root, trigger, menu };
+    customSelects.set(select, picker);
+    trigger.setAttribute("aria-label", select.title || root.closest("label")?.querySelector("span")?.textContent || "Select option");
+    trigger.addEventListener("click", () => {
+      const opening = menu.hidden;
+      closeCustomSelects(picker);
+      root.classList.toggle("open", opening);
+      trigger.setAttribute("aria-expanded", String(opening));
+      menu.hidden = !opening;
+      if (opening) menu.querySelector("[aria-selected='true']")?.focus();
+    });
+    trigger.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        if (menu.hidden) changeCustomSelect(select, event.key === "ArrowDown" ? 1 : -1);
+      } else if ((event.key === "Enter" || event.key === " ") && menu.hidden) {
+        event.preventDefault();
+        trigger.click();
+      }
+    });
+    renderCustomSelect(select);
+  }
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest("[data-select-picker]")) closeCustomSelects();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeCustomSelects();
+  });
 }
 
 function wireEvents() {
@@ -1676,6 +1762,7 @@ async function loadAuthenticatedApp() {
 async function init() {
   state.meta = await get("/api/meta");
   el.toolCount.textContent = `${state.meta.tools.length} tools`;
+  initCustomSelects();
   fillModes(el.modeSelect, state.meta.default_mode);
   wireEvents();
   startClock();
