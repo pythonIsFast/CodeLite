@@ -1,134 +1,141 @@
-# Code Lite
+<p align="center">
+  <img src="assets/icon.svg" width="96" alt="Code Lite logo" />
+</p>
 
-A lightweight, resource-efficient coding agent — built to stay small on disk
-and dependencies while doing the job of heavier tools.
+<h1 align="center">Code Lite</h1>
 
-Code Lite runs on your existing **ChatGPT** subscription instead of API
-credits. It signs you in directly and stores its own OAuth tokens separately
-from Codex. It opens in a **native window** (the OS's own webview —
-no bundled Chromium, no Electron), talks to your files and shell through a
-small set of tools, and gates risky actions behind a permission system you
-control.
+<p align="center">
+  <strong>A fast, lightweight coding agent for your local projects.</strong><br />
+  Sign in with ChatGPT. Work in a native desktop window. Keep control of every risky action.
+</p>
 
-Two layers, kept deliberately separate:
+<p align="center">
+  <a href="https://github.com/pythonIsFast/CodeLite/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-e17755.svg?style=flat-square" alt="Apache 2.0 license" /></a>
+  <img src="https://img.shields.io/badge/runtime-Python-3776ab.svg?style=flat-square" alt="Python runtime" />
+  <img src="https://img.shields.io/badge/UI-native%20webview-2f855a.svg?style=flat-square" alt="Native webview UI" />
+  <img src="https://img.shields.io/badge/dependencies-small%20by%20design-805ad5.svg?style=flat-square" alt="Small dependency footprint" />
+</p>
 
-| Layer | What it is | Dependencies |
-|---|---|---|
-| `codelite.provider` | ChatGPT-OAuth → OpenAI-compatible API (auth, transport, image handling, optional local proxy) | **none** — Python standard library only |
-| `codelite.agent` + `codelite.app` | The agent loop, tools, permissions, persistence, and the desktop window | Flask + pywebview |
+<p align="center">
+  <a href="#get-started">Get started</a> · <a href="#what-it-can-do">Features</a> · <a href="#safety-you-control">Safety</a> · <a href="#extend-a-project">Extensions</a> · <a href="#architecture">Architecture</a>
+</p>
 
-The provider layer is a from-scratch Python reimplementation of the ideas in
-[EvanZhouDev/openai-oauth](https://github.com/EvanZhouDev/openai-oauth)
-(TypeScript/Bun); the agent loop's structure took inspiration from
-[sst/opencode](https://github.com/sst/opencode). See [NOTICE](NOTICE) for
-attribution. All three projects are Apache-2.0.
+---
 
-## Running it
+> [!IMPORTANT]
+> Code Lite uses your existing **ChatGPT sign-in**, not an API key or API credits. It keeps its own OAuth session and never reads or overwrites Codex CLI authentication.
+
+## Why Code Lite?
+
+Most coding agents are either heavy desktop applications or thin terminal wrappers. Code Lite aims for a different balance: a capable local agent with a compact Python runtime, no Electron bundle, and an interface that stays out of the way.
+
+| | Code Lite |
+|---|---|
+| **Desktop app** | Native OS webview via pywebview — no bundled Chromium |
+| **Account** | Sign in with ChatGPT; tokens are stored separately in Code Lite's data directory |
+| **Agent loop** | Streaming model → tool → result → model workflow with automatic context compaction |
+| **Safety** | Per-action approvals, scoped session grants, and an optional command judge |
+| **Project context** | Instructions, memory, skills, MCP, and LSP — all lazy and bounded |
+| **Footprint** | Vanilla HTML/CSS/JS, Flask, pywebview, and a deliberately small dependency set |
+
+## Get started
+
+### 1. Install
 
 ```bash
+git clone https://github.com/pythonIsFast/CodeLite.git
+cd CodeLite
 pip install -r requirements.txt
 ```
+
+### 2. Run
 
 ```bash
 python3 run.py
 ```
 
-`run.py` works from any directory. (`python3 -m codelite` does the same thing,
-but only from the project root.)
+On first launch, select **Sign in with ChatGPT**. The browser completes OAuth and Code Lite stores its own session at `~/.local/share/codelite/auth.json` by default.
 
-On first launch, choose **Sign in with ChatGPT**. Code Lite opens the ChatGPT
-login in your browser, receives the local OAuth callback, and stores the tokens
-in its own data directory (`~/.local/share/codelite/auth.json` by default).
-It never reads or overwrites the Codex CLI's auth file. You can switch accounts
-later from Settings.
-
-Useful flags:
+<details>
+<summary><strong>Useful launch modes</strong></summary>
 
 ```bash
-python3 run.py --mode permit_writes --model gpt-5.6-sol
-```
+# Start with automatic file writes, but still ask for shell commands.
+python3 run.py --mode permit_writes
 
-```bash
+# Select a model explicitly.
+python3 run.py --model gpt-5.6-sol
+
+# Serve the app without opening a native window.
 python3 run.py --headless
-```
 
-The model picker also offers **Auto**. Before each message,
-`gpt-5.6-luna` routes with low reasoning to the lowest capable model: Auto for
-focused routine work, Terra for normal multi-file work and debugging, and Sol
-only for genuinely complex or high-risk tasks. Code Lite shows Auto's decision
-and the role and limits of all three models in the chat before the main agent
-starts. If routing is unavailable, it falls back to Terra rather than Sol.
-
-`--headless` serves the UI without opening a window, for when you'd rather
-use your own browser. To run *only* the raw OpenAI-compatible proxy, with no
-agent and no dependencies at all:
-
-```bash
+# Run only the small OpenAI-compatible local provider.
 python3 -m codelite.provider
 ```
 
-## Permission modes
+</details>
 
-Reads are never gated — they can't break anything. What changes per mode is
-how **file writes** and **shell commands** are handled:
+## What it can do
 
-| Mode | File writes | Shell commands |
+### Build, inspect, and change projects
+
+| Capability | What the agent can do |
+|---|---|
+| **Files & search** | Read, write, precisely edit, list, grep, and glob files inside the workspace |
+| **Terminal** | Run commands with the working directory carried across calls |
+| **Code intelligence** | Ask installed language servers for diagnostics, definitions, references, and symbols |
+| **Planning** | Keep a visible step-by-step task list for longer work |
+| **Clarification** | Pause to ask you a focused question with choices or a typed answer |
+
+### Use the web and work with media
+
+| Capability | How it stays practical |
+|---|---|
+| **Web search & fetch** | Searches public pages and converts HTML, text, or JSON into bounded readable output |
+| **Generate images** | Creates an image through the signed-in ChatGPT account and saves it in the workspace |
+| **See images** | Supplies the actual pixels of a workspace image to the model for the next turn |
+| **Showcase files** | Renders workspace images, video, audio, and files directly in the chat |
+
+### Let Auto choose the right model
+
+Choose **Auto** in the model picker and Code Lite uses a lightweight routing step before every turn. Routine work stays economical; larger refactors, debugging, and higher-risk changes can receive a more capable model. The selected model and reason remain visible in chat, and routing falls back to the balanced option instead of defaulting to the most expensive model.
+
+## Safety you control
+
+Reads are always safe. File changes and terminal commands follow the permission mode of the current conversation.
+
+| Mode | File changes | Shell commands |
 |---|---|---|
-| `ask` | you confirm each one | you confirm each one |
-| `permit_writes` | run automatically | you confirm each one |
-| `auto` | run automatically | a second model reviews each one |
-| `bypass` | run automatically | run automatically |
+| `ask` | Ask every time | Ask every time |
+| `permit_writes` | Allow | Ask every time |
+| `auto` | Allow | A separate safety check reviews each command, then escalates if needed |
+| `bypass` | Allow | Allow |
 
-In **`auto`** mode, a separate judge model (`gpt-5.6-luna` by default) sees
-both the shell command *and* the task you actually asked for — a command can
-look harmless on its own while being unrelated to the job. If the judge
-blocks a command, that's not a dead end: it explains why, the agent is told
-the reason, and the question is escalated to you with the judge's reasoning
-shown, so you make the final call.
+When Code Lite asks, you can approve once, approve a narrow scope for this chat, or deny with feedback. Write approvals include the actual unified diff. Shell grants are restricted to the exact normalized command and working directory; write grants are restricted to the displayed directory.
 
-You can switch modes mid-conversation from the window's header, and grant
-"allow for the rest of this session" from any prompt.
+> [!TIP]
+> `auto` does not silently ignore a blocked command. It shows why the safety check rejected it and lets you make the final decision.
 
-## Tools
+## Project intelligence, without the bloat
 
-`read_file`, `write_file`, `edit_file`, `list_dir`, `grep`, `find_files`,
-`code_intelligence`, `extensions`, `project_memory`, `generate_image`,
-`showcase_file`, `view_image`, `web_search`, `web_fetch`, `shell`,
-`todo_write`, `ask_user`, plus project-local tools.
+Code Lite loads useful project context only when it is needed and keeps every injected source bounded.
 
-Search is implemented in pure Python rather than shelling out to
-`grep`/`ripgrep`, so it needs no permission prompt and behaves the same on
-every machine. Every path the model supplies is resolved against the
-conversation's workspace and rejected if it escapes it.
+| Source | Location | Behaviour |
+|---|---|---|
+| **Global memory** | Code Lite data directory: `memory.md` | Personal preferences that apply to every project |
+| **Project memory** | `.codelite/memory.md` | Commands, conventions, and architecture shared by the workspace |
+| **Repository instructions** | `AGENTS.md`, `CLAUDE.md` | Collected before a run; nested applicable instructions are included |
+| **Skills** | `.codelite/skills/` | Only summaries enter the prompt; full guidance loads on demand |
+| **MCP** | `.codelite/mcp.json` | Stdio servers start only when their tools are used |
+| **LSP** | `.codelite/lsp.json` | Language servers start on their first code-intelligence request |
 
-`todo_write` is how the agent records a multi-step plan; the list is rendered
-in the conversation, so "what is it doing and how far along is it" has a real
-answer instead of a spinner.
+The settings panel separates account, global memory, and project configuration. Global memory works even before a project chat exists.
 
-`ask_user` pauses an agent step for a focused decision. It can show up to five
-choices, optionally accept a typed answer, and returns the answer directly to
-the model before work continues.
+## Extend a project
 
-`generate_image` uses the current ChatGPT sign-in to create an image. The
-agent supplies a prompt and a workspace-relative output path; saving it uses
-the same file-write permission policy as other generated files.
+### Local tools and hooks
 
-`showcase_file` embeds a workspace file in the chat (with native previews for
-images, video, and audio). `view_image` supplies the actual image pixels to
-the agent for one turn without persisting or repeatedly resending the data.
-
-`web_search` uses Bing's public HTML results and `web_fetch` converts public
-HTML, text, or JSON pages into bounded text. Both use only Python's standard
-library. Downloads are capped at 2 MB, tool output is capped, and private,
-local, credential-bearing, and reserved network destinations are rejected.
-
-### Local tools and plugin hooks
-
-Project-local Python extensions live in `.codelite/tools/*.py` or
-`.codelite/plugins/*.py`. Code Lite reads only literal `TOOL` and `HOOKS`
-metadata during discovery. The module itself is imported only when its tool or
-hook is first needed, and that import goes through the shell-command permission
-policy because local extension code has the same power as any Python program.
+Drop project-specific Python extensions into `.codelite/tools/*.py` or `.codelite/plugins/*.py`. Discovery reads only literal metadata; the module itself is imported only when the tool or hook is actually used, through the normal command-permission policy.
 
 ```python
 TOOL = {
@@ -146,53 +153,25 @@ def run(arguments, context):
     return f"Hello {arguments['name']}"
 ```
 
-Plugins declare `HOOKS = ["before_tool", "after_tool"]` and implement
-`before_tool(name, arguments, context)` and/or
-`after_tool(name, arguments, output, context)`. A before hook may return a
-replacement argument dictionary; an after hook may return replacement output.
-Returning `None` leaves the value unchanged. Extensions are limited to 32
-files per project and cannot replace built-in tool names.
+Plugins can expose `before_tool` and `after_tool` hooks. They may replace arguments or output, but cannot replace a built-in tool name. Extensions are capped at 32 files per project.
 
-## Project intelligence
+### MCP and custom LSP servers
 
-Code Lite keeps these features file-based, bounded, and lazy so they add
-almost nothing to startup time, install size, or token usage:
-
-- **Global memory** lives in the Code Lite data directory's `memory.md`, is
-  limited to 2,500 characters, and enters every project. Use it for personal
-  preferences and conventions that should apply everywhere.
-- **Project memory** lives in `.codelite/memory.md`, has the same limit, and is
-  shared by every chat in that workspace. Use it for project-specific commands,
-  conventions, and architecture decisions. The `project_memory` tool accepts a
-  `global` or `project` scope.
-- **Repository instructions** are automatically collected from `AGENTS.md` and
-  `CLAUDE.md` before each run, including applicable nested folders. Generated
-  directories such as `node_modules` are skipped, and the combined text is
-  bounded to protect startup time and token usage.
-- **Skills** are Markdown files at `.codelite/skills/*.md` or
-  `.codelite/skills/<name>/SKILL.md`. User-wide skills can use the same layout
-  under the Code Lite data directory's `skills/` folder. Only names and short
-  descriptions enter the system prompt; full instructions load on demand.
-- **MCP servers** are configured in `.codelite/mcp.json` and start only when
-  the agent lists or calls one of their tools. One stdio process is then reused.
-- **LSP intelligence** automatically uses installed `pyright-langserver`,
-  `typescript-language-server`, `rust-analyzer`, `gopls`, or `clangd`.
-  Custom servers go in `.codelite/lsp.json` and start only on first use.
-
-Example MCP configuration:
+<details>
+<summary><strong>Example MCP configuration</strong></summary>
 
 ```json
 {
   "mcpServers": {
-    "example": {
-      "command": "example-mcp-server",
-      "args": ["--stdio"]
-    }
+    "example": {"command": "example-mcp-server", "args": ["--stdio"]}
   }
 }
 ```
 
-Example custom LSP configuration:
+</details>
+
+<details>
+<summary><strong>Example LSP configuration</strong></summary>
 
 ```json
 {
@@ -207,89 +186,52 @@ Example custom LSP configuration:
 }
 ```
 
-The tabbed Settings panel separates the ChatGPT account, global memory, and
-project intelligence. Global memory is editable without an active project;
-project memory, MCP, and LSP configuration appear in the Project tab. Starting
-an external MCP/LSP process goes through the existing command permission policy.
+</details>
 
-## What works
+## Architecture
 
-- **Token refresh** — reads Code Lite's own `auth.json` (under
-  `$CODELITE_HOME`, `$XDG_DATA_HOME/codelite`, or the default data directory),
-  refreshes the access token when it nears expiry, and writes it straight back.
-- **Streaming agent loop** — model turn → tool calls → results → repeat, with
-  text, tool calls and results streaming into the window live. There is no
-  turn limit: a run ends when the model stops calling tools, when you stop it,
-  or when the context window is nearly full.
-- **Four permission modes**, including the judge-model path described above.
-  Write approvals show a unified diff of the pending change, not just a path.
-- **Persistence** — conversations and full history in SQLite, so restarting
-  the app doesn't lose anything. Token usage is stored per conversation, so
-  the context ring reflects the chat's real size the moment you open it.
-- **Automatic context compaction** — when a chat approaches its input budget,
-  Code Lite replaces older working context with a self-contained summary and
-  keeps the newest exchanges intact. The full original transcript remains
-  visible and stored locally.
-- **Manual context compaction** — the `Compact` button beside the permission
-  mode frees working context on demand while preserving the complete visible
-  transcript.
-- **Lazy project intelligence** — bounded repository instructions and project
-  memory, on-demand skills, optional MCP stdio tools, and persistent
-  language-server intelligence without adding Python dependencies.
-- **Plan usage** — how much of your weekly ChatGPT allowance is gone, read
-  from the `x-codex-*` response headers Codex attaches to every `/responses`
-  call. There is no endpoint for this, so the figure only refreshes when a
-  request goes out; the last one is cached in SQLite to survive a restart.
-- **OpenAI-compatible endpoints** via the provider layer:
-  `/v1/chat/completions`, `/v1/responses`, `/v1/models`,
-  `/v1/images/generations`, `/v1/images/edits`.
+```mermaid
+flowchart LR
+    U[You] --> UI[Native Code Lite window]
+    UI <--> R[Local Flask runtime]
+    R <--> A[Streaming agent loop]
+    A <--> P[ChatGPT OAuth provider]
+    A --> T[Workspace tools]
+    T --> F[Files · shell · web · images · LSP · MCP]
+    A <--> S[(SQLite conversations)]
+```
 
-## Known limitations
+| Layer | Responsibility | Dependencies |
+|---|---|---|
+| `codelite.provider` | ChatGPT OAuth, token refresh, Responses transport, images, optional local proxy | Python standard library |
+| `codelite.agent` | Agent loop, prompts, routing, compaction, tool calls | Core runtime |
+| `codelite.tools` | Filesystem, shell, search, web, image, memory, planning, questions | Small and permission-aware |
+| `codelite.app` | Flask runtime, SSE, SQLite-backed conversations, native window | Flask + pywebview |
 
-- **Shell commands are separate processes.** The working directory carries
-  over between calls, but nothing else does — no environment variables, no
-  shell functions, no background jobs.
-- **Context-window sizes come from Codex's own catalog** (`context_window`
-  per model). `codelite/config.py` carries a static table as an offline
-  fallback only, so the percentage is real unless the catalog is unreachable.
-- **Session allowances are narrow.** A write allowance applies only to the
-  displayed directory; a shell allowance applies only to the exact command in
-  its current working directory. A different path or command asks again.
-- **Chat Completions streaming translation is unverified against a live
-  stream.** The provider's `/v1/chat/completions` path exists for external
-  OpenAI-client compatibility; its non-streaming path is solid, but the
-  streaming event mapping was written from the public Responses API docs and
-  tested only against hand-written fixtures. The agent itself doesn't use
-  this path — it speaks the Responses API directly.
-- **pywebview needs a system webview backend** (WebKitGTK on Linux, usually
-  already present; WebView2 on Windows). On a minimal system this may need a
-  one-time system package.
-- **On reload, a tool card's success/failure is inferred** from its stored
-  output text rather than a persisted flag — cosmetic only.
-- Localhost only, no authentication: it's the private back end of a desktop
-  window, not a service to expose.
+The provider layer is a from-scratch Python implementation inspired by [EvanZhouDev/openai-oauth](https://github.com/EvanZhouDev/openai-oauth). The agent-loop structure took inspiration from [OpenCode](https://github.com/anomalyco/opencode). See [NOTICE](NOTICE) for attribution.
+
+## Deliberate constraints
+
+- The app binds to localhost only; it is a private desktop backend, not a network service.
+- Shell calls are separate processes. Code Lite carries the working directory between calls, not environment mutations, functions, or background jobs.
+- Web tools reject private, local, reserved, and credential-bearing destinations. Downloads and returned text are capped.
+- Context usage is tracked per conversation. Before the model reaches its input limit, older working context is compacted while the original transcript remains stored and visible.
+- pywebview needs a system webview backend: WebKitGTK on Linux or WebView2 on Windows.
 
 ## Project layout
 
-```
-run.py            start the app from anywhere
+```text
+run.py            Start the app from anywhere
 codelite/
-  provider/       stdlib-only: OAuth, Codex transport, SSE, images, limits, proxy
-  agent/          loop.py, system_prompt.py, judge.py
-  tools/          built-in tools plus memory, extensions, and code intelligence
-  integrations/   dependency-free lazy MCP and LSP stdio clients
-  project/        bounded project memory and skill discovery
-  permission/     modes.py (the four modes), manager.py (the gate)
-  db/             SQLite store; history is stored as Responses-API items
-  app/            runtime.py (live state), server.py (Flask), window.py,
-                  static/ + templates/ (vanilla HTML/JS/CSS, no build step)
-  config.py       app-wide defaults
-  __main__.py     python3 -m codelite
+  provider/       OAuth, transport, SSE, images, limits, proxy
+  agent/          Agent loop, prompts, routing, safety judge
+  tools/          Built-in and project-local capabilities
+  integrations/   Lazy MCP and LSP stdio clients
+  project/        Memory, instructions, skills, plugins
+  permission/     Modes and scoped approval manager
+  db/             SQLite conversation store
+  app/            Runtime, server, native window, vanilla UI
 ```
-
-History is persisted in the same shape the model consumes (Responses API
-input items), so there's no translation layer between storage, the model
-call, and the UI.
 
 ## License
 
