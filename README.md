@@ -147,9 +147,13 @@ files per project and cannot replace built-in tool names.
 Code Lite keeps these features file-based, bounded, and lazy so they add
 almost nothing to startup time, install size, or token usage:
 
-- **Project memory** lives in `.codelite/memory.md`, is limited to 2,500
-  characters, and is shared by every chat in that workspace. It is intended
-  for stable commands, conventions, and architecture decisions.
+- **Global memory** lives in the Code Lite data directory's `memory.md`, is
+  limited to 2,500 characters, and enters every project. Use it for personal
+  preferences and conventions that should apply everywhere.
+- **Project memory** lives in `.codelite/memory.md`, has the same limit, and is
+  shared by every chat in that workspace. Use it for project-specific commands,
+  conventions, and architecture decisions. The `project_memory` tool accepts a
+  `global` or `project` scope.
 - **Repository instructions** are automatically collected from `AGENTS.md` and
   `CLAUDE.md` before each run, including applicable nested folders. Generated
   directories such as `node_modules` are skipped, and the combined text is
@@ -192,9 +196,10 @@ Example custom LSP configuration:
 }
 ```
 
-Memory, MCP, and LSP configuration are also editable from Settings while a
-project chat is open. Starting an external MCP/LSP process goes through the
-existing command permission policy.
+The tabbed Settings panel separates the ChatGPT account, global memory, and
+project intelligence. Global memory is editable without an active project;
+project memory, MCP, and LSP configuration appear in the Project tab. Starting
+an external MCP/LSP process goes through the existing command permission policy.
 
 ## What works
 

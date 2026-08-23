@@ -23,6 +23,7 @@ from pathlib import Path
 
 PROJECT_DIR = ".codelite"
 MEMORY_PATH = Path(PROJECT_DIR) / "memory.md"
+GLOBAL_MEMORY_PATH = Path("memory.md")
 PROJECT_SKILLS_DIR = Path(PROJECT_DIR) / "skills"
 MCP_CONFIG_PATH = Path(PROJECT_DIR) / "mcp.json"
 LSP_CONFIG_PATH = Path(PROJECT_DIR) / "lsp.json"
@@ -215,6 +216,22 @@ def build_project_context(workspace: Path, data_dir: Path) -> str:
     instructions = _repository_instructions(root)
     if instructions:
         sections.append(instructions)
+    data_root = Path(data_dir).resolve()
+    global_memory_path = (data_root / GLOBAL_MEMORY_PATH).resolve()
+    if data_root not in global_memory_path.parents:
+        global_memory = ""
+    else:
+        try:
+            global_memory = global_memory_path.read_text(encoding="utf-8").strip()
+        except (OSError, UnicodeDecodeError):
+            global_memory = ""
+    if global_memory:
+        clipped = global_memory[:MAX_MEMORY_CHARS]
+        if len(global_memory) > len(clipped):
+            clipped += "\n[Global memory truncated; keep it more concise.]"
+        sections.append(
+            "Global memory (stable facts shared across all projects):\n" + clipped
+        )
     memory_path = (root / MEMORY_PATH).resolve()
     if root not in memory_path.parents:
         memory = ""

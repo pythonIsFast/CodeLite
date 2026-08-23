@@ -158,14 +158,33 @@
         <button type="button" class="dialog-close" id="settings-close"
                 aria-label="Close settings">×</button>
       </div>
-      <section class="settings-section">
+      <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+        <button type="button" class="settings-tab active" role="tab"
+                aria-selected="true" data-settings-tab="account">Account</button>
+        <button type="button" class="settings-tab" role="tab"
+                aria-selected="false" data-settings-tab="memory">Global memory</button>
+        <button type="button" class="settings-tab" id="project-settings-tab" role="tab"
+                aria-selected="false" data-settings-tab="project">Project</button>
+      </div>
+      <section class="settings-panel" data-settings-panel="account">
         <h3>ChatGPT account</h3>
         <p class="account-name" id="account-name">Not signed in</p>
         <p class="account-detail" id="account-detail"></p>
         <button type="button" class="btn" id="settings-login">Sign in again</button>
         <p class="auth-status" id="settings-auth-status"></p>
       </section>
-      <section class="settings-section" id="project-settings" hidden>
+      <section class="settings-panel" data-settings-panel="memory" hidden>
+        <h3>Global memory</h3>
+        <p class="account-detail" id="global-memory-path"></p>
+        <label class="field">
+          <span>Shared across every project</span>
+          <textarea id="global-memory" rows="8" spellcheck="false"
+                    placeholder="Preferences and conventions that should apply everywhere"></textarea>
+        </label>
+        <button type="button" class="btn" id="global-memory-save">Save global memory</button>
+      </section>
+      <section class="settings-panel" id="project-settings"
+               data-settings-panel="project" hidden>
         <h3>Project intelligence</h3>
         <p class="account-detail" id="project-settings-path"></p>
         <label class="field">

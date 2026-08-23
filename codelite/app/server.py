@@ -40,6 +40,7 @@ from ..permission.modes import Mode
 from ..provider.auth import AuthError
 from ..provider.login import ChatGPTLoginManager
 from ..project.context import (
+    GLOBAL_MEMORY_PATH,
     LSP_CONFIG_PATH,
     MAX_MEMORY_CHARS,
     MCP_CONFIG_PATH,
@@ -232,6 +233,36 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
     def delete_conversation(conversation_id: str):
         rt().delete_conversation(conversation_id)
         return jsonify({"deleted": conversation_id})
+
+    @app.get("/api/settings")
+    def global_settings():
+        data_root = rt().config.data_dir.resolve()
+        path = (data_root / GLOBAL_MEMORY_PATH).resolve()
+        try:
+            memory = path.read_text(encoding="utf-8") if path.is_file() else ""
+        except (OSError, UnicodeDecodeError):
+            memory = ""
+        return jsonify({"memory": memory, "memory_path": str(path)})
+
+    @app.put("/api/settings/memory")
+    def save_global_memory():
+        content = _body().get("content")
+        if not isinstance(content, str):
+            return jsonify({"error": "`content` must be a string."}), 400
+        if len(content) > MAX_MEMORY_CHARS:
+            return jsonify(
+                {"error": f"Global memory is limited to {MAX_MEMORY_CHARS:,} characters."}
+            ), 400
+        data_root = rt().config.data_dir.resolve()
+        target = (data_root / GLOBAL_MEMORY_PATH).resolve()
+        if data_root not in target.parents:
+            return jsonify({"error": "Global memory path leaves the data directory."}), 400
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        except OSError as exc:
+            return jsonify({"error": f"Could not save global memory: {exc}"}), 500
+        return jsonify({"saved": str(target), "content": content})
 
     @app.get("/api/conversations/<conversation_id>/project-settings")
     def project_settings(conversation_id: str):

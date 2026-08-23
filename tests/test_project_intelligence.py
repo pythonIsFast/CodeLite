@@ -6,6 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from codelite.app.server import create_app
+from codelite.config import AppConfig
 from codelite.permission.manager import PermissionManager
 from codelite.permission.modes import Mode
 from codelite.project.context import build_project_context, discover_skills, read_skill
@@ -41,6 +43,14 @@ class ProjectIntelligenceTests(unittest.TestCase):
                 {"action": "append", "content": "- Test with `python -m unittest`."},
                 context,
             )
+            PROJECT_MEMORY.run(
+                {
+                    "action": "append",
+                    "scope": "global",
+                    "content": "- Always keep responses concise.",
+                },
+                context,
+            )
             skill_dir = workspace / ".codelite" / "skills" / "review"
             skill_dir.mkdir(parents=True)
             skill_dir.joinpath("SKILL.md").write_text(
@@ -49,9 +59,31 @@ class ProjectIntelligenceTests(unittest.TestCase):
             )
             prompt = build_project_context(workspace, data_dir)
             self.assertIn("python -m unittest", prompt)
+            self.assertIn("Global memory", prompt)
+            self.assertIn("Always keep responses concise", prompt)
             self.assertIn("review: Review changes carefully.", prompt)
             self.assertEqual(discover_skills(workspace, data_dir)[0].name, "review")
             self.assertIn("Read the diff", read_skill(workspace, data_dir, "review"))
+
+    def test_global_memory_settings_apply_without_a_project(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            data_dir = Path(root) / "data"
+            app = create_app(AppConfig(data_dir=data_dir))
+            client = app.test_client()
+
+            saved = client.put(
+                "/api/settings/memory",
+                json={"content": "- Prefer small, dependency-free changes.\n"},
+            )
+            loaded = client.get("/api/settings")
+
+            self.assertEqual(saved.status_code, 200)
+            self.assertEqual(loaded.status_code, 200)
+            self.assertIn("dependency-free", loaded.get_json()["memory"])
+            self.assertEqual(
+                data_dir.joinpath("memory.md").read_text(encoding="utf-8"),
+                "- Prefer small, dependency-free changes.\n",
+            )
 
     def test_repository_instructions_are_loaded_and_dependencies_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as root:

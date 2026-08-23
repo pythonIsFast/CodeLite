@@ -56,10 +56,16 @@ const el = {
   settingsButton: $("settings-button"),
   settingsOverlay: $("settings-overlay"),
   settingsClose: $("settings-close"),
+  settingsTabs: [...document.querySelectorAll("[data-settings-tab]")],
+  settingsPanels: [...document.querySelectorAll("[data-settings-panel]")],
   settingsLogin: $("settings-login"),
   accountName: $("account-name"),
   accountDetail: $("account-detail"),
   settingsAuthStatus: $("settings-auth-status"),
+  globalMemory: $("global-memory"),
+  globalMemoryPath: $("global-memory-path"),
+  globalMemorySave: $("global-memory-save"),
+  projectSettingsTab: $("project-settings-tab"),
   projectSettings: $("project-settings"),
   projectSettingsPath: $("project-settings-path"),
   projectMemory: $("project-memory"),
@@ -147,7 +153,7 @@ async function refreshAuth() {
 }
 
 async function loadProjectSettings() {
-  el.projectSettings.hidden = !state.active;
+  el.projectSettingsTab.hidden = !state.active;
   if (!state.active) return;
   const settings = await get(`/api/conversations/${state.active.id}/project-settings`);
   el.projectSettingsPath.textContent = settings.project_dir;
@@ -158,6 +164,33 @@ async function loadProjectSettings() {
   el.projectSkills.textContent = skills.length
     ? `Skills: ${skills.map((skill) => skill.name).join(", ")}`
     : "Skills: none. Add Markdown skills under .codelite/skills/.";
+}
+
+async function loadGlobalSettings() {
+  const settings = await get("/api/settings");
+  el.globalMemory.value = settings.memory || "";
+  el.globalMemoryPath.textContent = settings.memory_path || "";
+}
+
+async function saveGlobalMemory() {
+  const data = await api("/api/settings/memory", {
+    method: "PUT",
+    body: JSON.stringify({ content: el.globalMemory.value }),
+  });
+  el.globalMemory.value = data.content ?? el.globalMemory.value;
+  toast("Global memory saved.");
+}
+
+function selectSettingsTab(name) {
+  if (name === "project" && !state.active) name = "account";
+  for (const tab of el.settingsTabs) {
+    const active = tab.dataset.settingsTab === name;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+  }
+  for (const panel of el.settingsPanels) {
+    panel.hidden = panel.dataset.settingsPanel !== name;
+  }
 }
 
 async function saveProjectSetting(kind, textarea) {
@@ -1428,10 +1461,20 @@ function wireEvents() {
   el.settingsLogin.addEventListener("click", startAuthLogin);
   el.settingsButton.addEventListener("click", async () => {
     await refreshAuth().catch((error) => toast(error.message, true));
-    await loadProjectSettings().catch((error) => toast(error.message, true));
+    await Promise.all([
+      loadGlobalSettings(),
+      loadProjectSettings(),
+    ]).catch((error) => toast(error.message, true));
+    selectSettingsTab("account");
     el.settingsOverlay.hidden = false;
   });
+  for (const tab of el.settingsTabs) {
+    tab.addEventListener("click", () => selectSettingsTab(tab.dataset.settingsTab));
+  }
   el.settingsClose.addEventListener("click", () => { el.settingsOverlay.hidden = true; });
+  el.globalMemorySave.addEventListener("click", () => {
+    saveGlobalMemory().catch((error) => toast(error.message, true));
+  });
   el.projectMemorySave.addEventListener("click", () => {
     saveProjectSetting("memory", el.projectMemory).catch((error) => toast(error.message, true));
   });

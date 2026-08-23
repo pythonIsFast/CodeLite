@@ -755,11 +755,34 @@ button { cursor: pointer; }
   max-height: min(760px, calc(100vh - 48px));
   overflow-y: auto;
 }
-.settings-section { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
-.settings-section h3 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); }
+.settings-tabs {
+  display: flex;
+  gap: 3px;
+  margin: 16px 0 18px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--bg-sunken);
+}
+.settings-tab {
+  flex: 1;
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 10px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12px;
+}
+.settings-tab:hover { color: var(--text); }
+.settings-tab.active {
+  background: var(--bg-raised);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .08);
+}
+.settings-panel h3 { margin: 0 0 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-faint); }
 .account-name { margin: 0; font-weight: 600; }
 .account-detail { margin: 2px 0 14px; color: var(--text-dim); font-size: 13px; }
-.settings-section textarea {
+.settings-panel textarea {
   width: 100%;
   resize: vertical;
   border: 1px solid var(--border);
@@ -772,8 +795,8 @@ button { cursor: pointer; }
   color: var(--text);
   outline: none;
 }
-.settings-section textarea:focus { border-color: var(--accent); }
-.settings-section .field { margin: 12px 0 7px; }
+.settings-panel textarea:focus { border-color: var(--accent); }
+.settings-panel .field { margin: 12px 0 7px; }
 
 .perm-kind { margin: 0 0 10px; color: var(--text-dim); font-size: 13px; }
 .perm-scope { margin: -4px 0 12px; color: var(--text-faint); font-size: 12px; }
