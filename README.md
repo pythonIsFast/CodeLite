@@ -92,6 +92,7 @@ python3 -m codelite.provider
 | Capability | How it stays practical |
 |---|---|
 | **Web search & fetch** | Searches public pages and converts HTML, text, or JSON into bounded readable output |
+| **Hidden browser** | Drives a hidden system-webview window for pages `web_fetch` can't read because they need JavaScript to render -- navigate, a compact element snapshot with stable refs, click, fill, run JS, screenshot |
 | **Generate images** | Creates an image through the signed-in ChatGPT account and saves it in the workspace |
 | **See images** | Supplies the actual pixels of a workspace image to the model for the next turn |
 | **Showcase files** | Renders workspace images, video, audio, and files directly in the chat |
@@ -267,6 +268,30 @@ flowchart LR
 
 The provider layer is a from-scratch Python implementation inspired by [EvanZhouDev/openai-oauth](https://github.com/EvanZhouDev/openai-oauth). The agent-loop structure took inspiration from [OpenCode](https://github.com/anomalyco/opencode). See [NOTICE](NOTICE) for attribution.
 
+## The hidden browser
+
+`web_search`/`web_fetch` stay the default for reading the web -- they need no
+window and are cheap. The `browser` tool exists for the pages those cannot
+read at all: ones that render their content with JavaScript. It reuses the
+same system webview `codelite.app.window` already opens for the UI, in a
+second, invisible window -- no Chromium, no Playwright, no separate browser
+engine.
+
+That window runs in its own child process, not a second window inside the
+app's own: pywebview blocks its owning thread for as long as its event loop
+runs, and a page that hangs or crashes the renderer must not be able to take
+the whole app down with it. Reading (`navigate`, `snapshot`, `screenshot`)
+needs no confirmation, the same as `web_fetch`; anything that acts on the page
+(`click`, `fill`, `evaluate`) goes through the same permission gate as a file
+write, because it can submit a form or follow a link into a purchase flow
+exactly as a write changes state on disk.
+
+Two things this does not paper over: a packaged/frozen build has no system
+Python to run the child process with, so the tool reports that plainly rather
+than failing strangely; and screenshots are WebKitGTK-specific today (Linux
+only) because pywebview itself exposes no screenshot call -- extending that to
+WebView2 on Windows is unimplemented, not merely untested.
+
 ## Deliberate constraints
 
 - The app binds to localhost only; it is a private desktop backend, not a network service.
@@ -283,6 +308,7 @@ run.py            Start the app from anywhere
 codelite/
   provider/       OAuth, transport, SSE, images, limits, proxy
   agent/          Agent loop, prompts, routing, safety judge
+  browser/        Hidden-webview child process for JS-rendered pages
   tools/          Built-in and project-local capabilities
   integrations/   Lazy MCP and LSP stdio clients
   project/        Memory, instructions, skills, plugins

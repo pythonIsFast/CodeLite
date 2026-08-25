@@ -193,6 +193,19 @@ SETTINGS: tuple[Setting, ...] = (
         step=0.5,
     ),
     Setting(
+        key="browser_timeout_seconds",
+        label="Browser tool timeout",
+        kind="float",
+        default=30.0,
+        group="integrations",
+        help="How long to wait for the hidden browser to answer one action "
+        "(navigate, click, a screenshot). A slow page may need more.",
+        minimum=5,
+        maximum=180,
+        unit="s",
+        step=1,
+    ),
+    Setting(
         key="max_memory_chars",
         label="Memory budget",
         kind="int",

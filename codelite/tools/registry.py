@@ -23,6 +23,7 @@ from __future__ import annotations
 from typing import Any
 
 from .base import Tool
+from .browser import BROWSER
 from .code_intelligence import CODE_INTELLIGENCE
 from .extensions import EXTENSIONS
 from .files import EDIT_FILE, LIST_DIR, READ_FILE, WRITE_FILE
@@ -37,6 +38,7 @@ from .vision import VIEW_IMAGE
 from .web import WEB_FETCH, WEB_SEARCH
 
 TOOLS: tuple[Tool, ...] = (
+    BROWSER,
     READ_FILE,
     WRITE_FILE,
     EDIT_FILE,
