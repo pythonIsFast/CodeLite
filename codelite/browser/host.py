@@ -337,8 +337,11 @@ def main() -> None:  # pragma: no cover - exercised manually, needs a real displ
         "codelite-browser", "about:blank", hidden=True, width=1280, height=900
     )
     session = BrowserSession(window, screenshot_fn=_screenshot_backend())
-    threading.Thread(target=serve, args=(session,), daemon=True).start()
-    webview.start(debug=False)
+    # `serve` must not start reading commands until the GUI event loop is
+    # actually running -- load_url/evaluate_js need it. Starting it as a
+    # plain thread alongside webview.start() races that loop's startup;
+    # passing it as webview.start()'s own func guarantees the ordering.
+    webview.start(serve, (session,), debug=False)
 
 
 if __name__ == "__main__":  # pragma: no cover

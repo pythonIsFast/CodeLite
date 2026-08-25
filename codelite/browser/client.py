@@ -27,6 +27,7 @@ import queue
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -138,29 +139,44 @@ class BrowserClient:
             except (BrokenPipeError, ValueError, OSError) as error:
                 raise BrowserError(f"The browser process is not available: {error}") from error
 
-            try:
-                line = self._queue.get(timeout=self._timeout())
-            except queue.Empty:
-                raise BrowserError(
-                    f"The browser did not respond to `{action}` within the configured timeout."
-                ) from None
+            deadline = time.monotonic() + self._timeout()
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise BrowserError(
+                        f"The browser did not respond to `{action}` within the "
+                        "configured timeout."
+                    )
+                try:
+                    line = self._queue.get(timeout=remaining)
+                except queue.Empty:
+                    raise BrowserError(
+                        f"The browser did not respond to `{action}` within the "
+                        "configured timeout."
+                    ) from None
 
-        if line is None:
-            stderr = ""
-            if self._proc is not None and self._proc.stderr is not None:
-                stderr = self._proc.stderr.read().strip()
-            detail = f" {stderr}" if stderr else ""
-            raise BrowserError(f"The browser process exited unexpectedly.{detail}")
+                if line is None:
+                    stderr = ""
+                    if self._proc is not None and self._proc.stderr is not None:
+                        stderr = self._proc.stderr.read().strip()
+                    detail = f" {stderr}" if stderr else ""
+                    raise BrowserError(f"The browser process exited unexpectedly.{detail}")
 
-        try:
-            response = json.loads(line)
-        except ValueError as error:
-            raise BrowserError(f"The browser sent an unreadable response: {error}") from error
-        if not isinstance(response, dict) or response.get("id") != request_id:
-            # The protocol is strictly one-in-one-out under the lock, so a
-            # mismatch means something is badly wrong -- surfacing it beats
-            # silently accepting a response meant for a different call.
-            raise BrowserError("Got a response that did not match the request.")
+                try:
+                    response = json.loads(line)
+                except ValueError as error:
+                    raise BrowserError(
+                        f"The browser sent an unreadable response: {error}"
+                    ) from error
+
+                if isinstance(response, dict) and response.get("id") == request_id:
+                    break
+                # A response to a call this client already gave up waiting on
+                # (it timed out, but the host answered late) -- discard it and
+                # keep waiting for the one that actually matches. Without this
+                # every later call would desync forever off this one leftover
+                # line.
+
         if not response.get("ok"):
             raise BrowserError(response.get("error") or f"`{action}` failed.")
         return response.get("result")
