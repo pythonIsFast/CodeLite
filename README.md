@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="#get-started">Get started</a> · <a href="#what-it-can-do">Features</a> · <a href="#safety-you-control">Safety</a> · <a href="#extend-a-project">Extensions</a> · <a href="#architecture">Architecture</a>
+  <a href="#download">Download</a> · <a href="#get-started">Get started</a> · <a href="#what-it-can-do">Features</a> · <a href="#safety-you-control">Safety</a> · <a href="#extend-a-project">Extensions</a> · <a href="#architecture">Architecture</a>
 </p>
 
 ---
@@ -37,6 +37,27 @@ Most coding agents are either heavy desktop applications or thin terminal wrappe
 | **Safety** | Per-action approvals, scoped session grants, and an optional command judge |
 | **Project context** | Instructions, memory, skills, MCP, and LSP — all lazy and bounded |
 | **Footprint** | Vanilla HTML/CSS/JS, Flask, pywebview, and a deliberately small dependency set |
+
+## Download
+
+Every [release](https://github.com/pythonIsFast/CodeLite/releases/latest) ships four ready-to-run builds, all built from the same source in CI:
+
+| Platform | File | Notes |
+|---|---|---|
+| Windows | `CodeLite-<version>-windows-setup.exe` | Installer, no admin rights needed |
+| Windows | `CodeLite-<version>-windows-portable.exe` | Single file, nothing to install |
+| Debian / Ubuntu | `code-lite_<version>_all.deb` | `sudo apt install ./code-lite_<version>_all.deb` |
+| Linux | `code-lite-<version>.pyz` | Single file, run with `python3 code-lite-<version>.pyz` |
+
+The Linux builds use your system's own Python and WebKitGTK rather than bundling a browser, which is what keeps them a few megabytes instead of a few hundred. If the window doesn't open on a fresh install:
+
+```bash
+sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 gir1.2-webkit2-4.1
+```
+
+Windows builds are not code-signed, so SmartScreen may warn on first run; verify the download against the release's `SHA256SUMS.txt` if that matters to you.
+
+Prefer to run from source, or want to change the code? Keep reading.
 
 ## Get started
 
@@ -96,6 +117,30 @@ python3 -m codelite.provider
 | **Generate images** | Creates an image through the signed-in ChatGPT account and saves it in the workspace |
 | **See images** | Supplies the actual pixels of a workspace image to the model for the next turn |
 | **Showcase files** | Renders workspace images, video, audio, and files directly in the chat |
+
+### The hidden browser
+
+`web_search`/`web_fetch` stay the default for reading the web -- they need no
+window and are cheap. The `browser` tool exists for the pages those cannot
+read at all: ones that render their content with JavaScript. It reuses the
+same system webview `codelite.app.window` already opens for the UI, in a
+second, invisible window -- no Chromium, no Playwright, no separate browser
+engine.
+
+That window runs in its own child process, not a second window inside the
+app's own: pywebview blocks its owning thread for as long as its event loop
+runs, and a page that hangs or crashes the renderer must not be able to take
+the whole app down with it. Reading (`navigate`, `snapshot`, `screenshot`)
+needs no confirmation, the same as `web_fetch`; anything that acts on the page
+(`click`, `fill`, `evaluate`) goes through the same permission gate as a file
+write, because it can submit a form or follow a link into a purchase flow
+exactly as a write changes state on disk.
+
+Two things this does not paper over: a packaged/frozen build has no system
+Python to run the child process with, so the tool reports that plainly rather
+than failing strangely; and screenshots are WebKitGTK-specific today (Linux
+only) because pywebview itself exposes no screenshot call -- extending that to
+WebView2 on Windows is unimplemented, not merely untested.
 
 ### Let Auto choose the right model
 
@@ -256,6 +301,7 @@ flowchart LR
     A <--> P[ChatGPT OAuth provider]
     A --> T[Workspace tools]
     T --> F[Files · shell · web · images · LSP · MCP]
+    T -.-> B[Hidden browser — separate child process]
     A <--> S[(SQLite conversations)]
 ```
 
@@ -264,33 +310,10 @@ flowchart LR
 | `codelite.provider` | ChatGPT OAuth, token refresh, Responses transport, images, optional local proxy | Standard-library only |
 | `codelite.agent` | Agent loop, prompts, routing, compaction, and tool orchestration | Streaming, context-aware workflow |
 | `codelite.tools` | Filesystem, shell, search, web, image, memory, planning, and questions | Workspace-scoped and permission-aware |
+| `codelite.browser` | A second, invisible pywebview window for JS-rendered pages | Its own child process, so a hung page can't take the app down |
 | `codelite.app` | Flask runtime, SSE, SQLite-backed conversations, and native window | Flask + pywebview desktop layer |
 
 The provider layer is a from-scratch Python implementation inspired by [EvanZhouDev/openai-oauth](https://github.com/EvanZhouDev/openai-oauth). The agent-loop structure took inspiration from [OpenCode](https://github.com/anomalyco/opencode). See [NOTICE](NOTICE) for attribution.
-
-## The hidden browser
-
-`web_search`/`web_fetch` stay the default for reading the web -- they need no
-window and are cheap. The `browser` tool exists for the pages those cannot
-read at all: ones that render their content with JavaScript. It reuses the
-same system webview `codelite.app.window` already opens for the UI, in a
-second, invisible window -- no Chromium, no Playwright, no separate browser
-engine.
-
-That window runs in its own child process, not a second window inside the
-app's own: pywebview blocks its owning thread for as long as its event loop
-runs, and a page that hangs or crashes the renderer must not be able to take
-the whole app down with it. Reading (`navigate`, `snapshot`, `screenshot`)
-needs no confirmation, the same as `web_fetch`; anything that acts on the page
-(`click`, `fill`, `evaluate`) goes through the same permission gate as a file
-write, because it can submit a form or follow a link into a purchase flow
-exactly as a write changes state on disk.
-
-Two things this does not paper over: a packaged/frozen build has no system
-Python to run the child process with, so the tool reports that plainly rather
-than failing strangely; and screenshots are WebKitGTK-specific today (Linux
-only) because pywebview itself exposes no screenshot call -- extending that to
-WebView2 on Windows is unimplemented, not merely untested.
 
 ## Deliberate constraints
 
