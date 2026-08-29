@@ -913,6 +913,8 @@ button { cursor: pointer; }
 .chatgpt-button:hover { background: #f7f7f7; border-color: #bdbdbd; }
 .chatgpt-button:disabled { opacity: .65; cursor: wait; }
 .chatgpt-mark { font-size: 21px; line-height: 1; }
+.auth-manual { display: flex; justify-content: center; gap: 8px; margin-top: 12px; }
+.auth-manual[hidden] { display: none; }
 .auth-status { min-height: 20px; margin: 12px 0 0 !important; color: var(--text-dim); font-size: 12.5px; }
 .auth-status.error { color: var(--danger); }
 

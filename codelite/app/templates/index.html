@@ -217,6 +217,10 @@
         <span class="chatgpt-mark" aria-hidden="true">✦</span>
         <span>Sign in with ChatGPT</span>
       </button>
+      <div class="auth-manual" id="auth-manual" hidden>
+        <a class="btn" id="auth-open-link" target="_blank" rel="noopener">Open login page</a>
+        <button type="button" class="btn" id="auth-copy-link">Copy login link</button>
+      </div>
       <p class="auth-status" id="auth-status"></p>
     </div>
   </div>
@@ -246,6 +250,10 @@
         <p class="account-name" id="account-name">Not signed in</p>
         <p class="account-detail" id="account-detail"></p>
         <button type="button" class="btn" id="settings-login">Sign in again</button>
+        <div class="auth-manual" id="settings-auth-manual" hidden>
+          <a class="btn" id="settings-auth-open-link" target="_blank" rel="noopener">Open login page</a>
+          <button type="button" class="btn" id="settings-auth-copy-link">Copy login link</button>
+        </div>
         <p class="auth-status" id="settings-auth-status"></p>
       </section>
       <section class="settings-panel" data-settings-panel="memory" hidden>

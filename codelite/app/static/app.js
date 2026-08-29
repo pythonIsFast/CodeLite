@@ -80,6 +80,9 @@ const el = {
   accountName: $("account-name"),
   accountDetail: $("account-detail"),
   settingsAuthStatus: $("settings-auth-status"),
+  settingsAuthManual: $("settings-auth-manual"),
+  settingsAuthOpenLink: $("settings-auth-open-link"),
+  settingsAuthCopyLink: $("settings-auth-copy-link"),
   globalMemory: $("global-memory"),
   globalMemoryPath: $("global-memory-path"),
   globalMemorySave: $("global-memory-save"),
@@ -103,6 +106,9 @@ const el = {
   authOverlay: $("auth-overlay"),
   authLogin: $("auth-login"),
   authStatus: $("auth-status"),
+  authManual: $("auth-manual"),
+  authOpenLink: $("auth-open-link"),
+  authCopyLink: $("auth-copy-link"),
 };
 
 const state = {
@@ -130,6 +136,7 @@ const state = {
   auth: null,
   appLoaded: false,
   authPoll: null,
+  authUrl: null,
   attachments: [],
   uploadsInProgress: 0,
 };
@@ -171,7 +178,15 @@ function renderAuth(auth) {
     : "Sign in with ChatGPT";
   el.settingsLogin.textContent = waiting ? "Waiting for ChatGPT…" : "Sign in again";
 
-  const message = auth.error || (waiting ? "Finish signing in in your browser." : "");
+  const showManual = waiting && Boolean(state.authUrl);
+  el.authManual.hidden = !showManual;
+  el.settingsAuthManual.hidden = !showManual;
+  if (showManual) {
+    el.authOpenLink.href = state.authUrl;
+    el.settingsAuthOpenLink.href = state.authUrl;
+  }
+
+  const message = auth.error || (waiting ? "Finish signing in in your browser. If it did not open, use the link above." : "");
   el.authStatus.textContent = message;
   el.authStatus.classList.toggle("error", Boolean(auth.error));
   el.settingsAuthStatus.textContent = message;
@@ -474,21 +489,35 @@ async function startAuthLogin() {
   const popup = hasNativeOpener ? null : window.open("about:blank", "codelite-chatgpt-login");
   try {
     const data = await post("/api/auth/login");
+    state.authUrl = data.authorization_url;
+    await refreshAuth();
     if (hasNativeOpener) {
-      const opened = await window.pywebview.api.open_external(data.authorization_url);
-      if (!opened) throw new Error("Could not open the default browser. Please check your desktop browser settings.");
+      try {
+        await window.pywebview.api.open_external(data.authorization_url);
+      } catch (error) {
+        console.warn("Could not open the login page automatically", error);
+      }
     } else if (popup) {
       popup.location.href = data.authorization_url;
     } else {
       window.open(data.authorization_url, "_blank", "noopener");
     }
-    await refreshAuth();
     stopAuthPolling();
     state.authPoll = setInterval(pollAuth, 1000);
   } catch (error) {
     if (popup) popup.close();
     toast(error.message, true);
     await refreshAuth().catch(() => {});
+  }
+}
+
+async function copyAuthLink() {
+  if (!state.authUrl) return;
+  try {
+    await navigator.clipboard.writeText(state.authUrl);
+    toast("Login link copied.");
+  } catch (error) {
+    toast("Could not copy the login link.", true);
   }
 }
 
@@ -2189,6 +2218,8 @@ function initCustomSelects() {
 function wireEvents() {
   el.authLogin.addEventListener("click", startAuthLogin);
   el.settingsLogin.addEventListener("click", startAuthLogin);
+  el.authCopyLink.addEventListener("click", copyAuthLink);
+  el.settingsAuthCopyLink.addEventListener("click", copyAuthLink);
   el.settingsButton.addEventListener("click", async () => {
     await refreshAuth().catch((error) => toast(error.message, true));
     await Promise.all([
