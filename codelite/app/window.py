@@ -25,7 +25,10 @@ from __future__ import annotations
 
 import base64
 import logging
+import os
 import socket
+import subprocess
+import sys
 import threading
 import time
 import urllib.parse
@@ -104,7 +107,28 @@ class JsApi:
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme != "https" or parsed.hostname != "auth.openai.com":
             raise ValueError("Only the ChatGPT login URL may be opened externally.")
-        return webbrowser.open(url, new=1)
+
+        # ``webbrowser`` can return False on Linux when no BROWSER handler is
+        # registered, even though the desktop has a working default browser.
+        try:
+            if webbrowser.open(url, new=1):
+                return True
+        except OSError:
+            logger.debug("The Python browser opener failed", exc_info=True)
+
+        try:
+            if sys.platform.startswith("linux"):
+                subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            if os.name == "nt":
+                os.startfile(url)  # type: ignore[attr-defined]  # noqa: S606
+                return True
+        except OSError:
+            logger.warning("Could not open the ChatGPT login URL in a browser", exc_info=True)
+        return False
 
     def read_clipboard_image(self) -> dict[str, str] | None:
         """Read a screenshot from the native Linux clipboard as a PNG.
