@@ -475,7 +475,8 @@ async function startAuthLogin() {
   try {
     const data = await post("/api/auth/login");
     if (hasNativeOpener) {
-      await window.pywebview.api.open_external(data.authorization_url);
+      const opened = await window.pywebview.api.open_external(data.authorization_url);
+      if (!opened) throw new Error("Could not open the default browser. Please check your desktop browser settings.");
     } else if (popup) {
       popup.location.href = data.authorization_url;
     } else {

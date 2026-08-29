@@ -108,8 +108,21 @@ class JsApi:
         if parsed.scheme != "https" or parsed.hostname != "auth.openai.com":
             raise ValueError("Only the ChatGPT login URL may be opened externally.")
 
-        # ``webbrowser`` can return False on Linux when no BROWSER handler is
-        # registered, even though the desktop has a working default browser.
+        # On Linux, Python's ``webbrowser`` delegates to xdg-open and may
+        # report success even when it cannot resolve a Flatpak desktop entry.
+        # GIO uses the desktop's application registry directly.
+        if sys.platform.startswith("linux"):
+            try:
+                import gi  # noqa: PLC0415 - optional native Linux integration
+
+                gi.require_version("Gio", "2.0")
+                from gi.repository import Gio  # noqa: PLC0415
+
+                if Gio.AppInfo.launch_default_for_uri(url, None):
+                    return True
+            except Exception:  # noqa: BLE001 - availability is platform dependent
+                logger.debug("The GIO browser opener failed", exc_info=True)
+
         try:
             if webbrowser.open(url, new=1):
                 return True
@@ -118,10 +131,18 @@ class JsApi:
 
         try:
             if sys.platform.startswith("linux"):
-                subprocess.Popen(["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen(
+                    ["xdg-open", url],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
                 return True
             if sys.platform == "darwin":
-                subprocess.Popen(["open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen(
+                    ["open", url],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
                 return True
             if os.name == "nt":
                 os.startfile(url)  # type: ignore[attr-defined]  # noqa: S606
