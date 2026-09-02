@@ -33,6 +33,18 @@ from codelite.tools.browser import _run_browser
 from codelite.tools.context import ToolContext
 
 
+class FakeEvent:
+    def __init__(self, result: bool = True) -> None:
+        self.result = result
+        self.cleared = False
+
+    def clear(self) -> None:
+        self.cleared = True
+
+    def wait(self, _timeout: float) -> bool:
+        return self.result
+
+
 class FakeWindow:
     """Stands in for a pywebview window: scripted `evaluate_js` results."""
 
@@ -59,6 +71,30 @@ def test_navigate_loads_and_reports_the_url_and_title() -> None:
     result = session.navigate("https://example.com")
     assert window.loaded_url == "https://example.com"
     assert result == {"url": "https://example.com/", "title": "Example"}
+
+
+def test_navigate_uses_native_loaded_event_before_evaluating() -> None:
+    window = FakeWindow().queue("https://example.com/", "Example")
+    window.events = type("Events", (), {"loaded": FakeEvent()})()
+    session = BrowserSession(window)
+
+    result = session.navigate("https://example.com")
+
+    assert window.events.loaded.cleared is True
+    assert result == {"url": "https://example.com/", "title": "Example"}
+    assert "document.readyState" not in window.scripts
+
+
+def test_navigate_timeout_does_not_enter_the_js_bridge() -> None:
+    window = FakeWindow()
+    window.events = type("Events", (), {"loaded": FakeEvent(False)})()
+    session = BrowserSession(window)
+
+    assert session.navigate("https://slow.example", timeout=0) == {
+        "url": "https://slow.example",
+        "title": "",
+    }
+    assert window.scripts == []
 
 
 def test_navigate_back_uses_history_not_load_url() -> None:

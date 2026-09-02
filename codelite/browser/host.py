@@ -125,11 +125,23 @@ class BrowserSession:
         target = url.strip()
         if not target:
             raise BrowserActionError("`url` must not be empty.")
+
+        # On WebKitGTK, evaluating JavaScript while a navigation is being
+        # committed can leave pywebview's synchronous bridge waiting forever.
+        # Its loaded event is driven by the native backend and remains bounded.
+        events = getattr(self.window, "events", None)
+        loaded = getattr(events, "loaded", None)
+        if loaded is not None:
+            loaded.clear()
         if target in ("back", "forward"):
             self.window.evaluate_js(f"history.{target}();")
         else:
             self.window.load_url(target)
-        self._wait_for_load(timeout)
+        if loaded is not None:
+            if not loaded.wait(timeout):
+                return {"url": target, "title": ""}
+        else:
+            self._wait_for_load(timeout)
         return {
             "url": self.window.evaluate_js("location.href"),
             "title": self.window.evaluate_js("document.title"),
@@ -263,6 +275,9 @@ def serve(session: BrowserSession, stdin: Any = None, stdout: Any = None) -> Non
         stdout.write(json.dumps(response) + "\n")
         stdout.flush()
         if command.get("action") == "shutdown":
+            destroy = getattr(session.window, "destroy", None)
+            if destroy is not None:
+                destroy()
             return
 
 
@@ -337,11 +352,15 @@ def main() -> None:  # pragma: no cover - exercised manually, needs a real displ
         "codelite-browser", "about:blank", hidden=True, width=1280, height=900
     )
     session = BrowserSession(window, screenshot_fn=_screenshot_backend())
-    # `serve` must not start reading commands until the GUI event loop is
-    # actually running -- load_url/evaluate_js need it. Starting it as a
-    # plain thread alongside webview.start() races that loop's startup;
-    # passing it as webview.start()'s own func guarantees the ordering.
-    webview.start(serve, (session,), debug=False)
+
+    def serve_when_loaded() -> None:
+        # webview.start() launches its callback just before creating the native
+        # window. Wait for about:blank to finish so its late loaded event cannot
+        # be mistaken for the first requested navigation.
+        window.events.loaded.wait(20)
+        serve(session)
+
+    webview.start(serve_when_loaded, debug=False)
 
 
 if __name__ == "__main__":  # pragma: no cover
