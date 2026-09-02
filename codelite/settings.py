@@ -104,6 +104,14 @@ SETTINGS: tuple[Setting, ...] = (
         help="Reviews shell commands in auto mode. A small model is the point here.",
     ),
     Setting(
+        key="compaction_model",
+        label="Compactor model",
+        kind="model",
+        default="gpt-5.6-luna",
+        group="agent",
+        help="Summarizes the complete visible conversation when Compact at is reached or Compact is pressed.",
+    ),
+    Setting(
         key="auto_router_model",
         label="Routing model",
         kind="model",

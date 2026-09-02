@@ -106,7 +106,7 @@ class AgentRunner:
             if self._maybe_compact_history(force=True) is None:
                 self._publish(
                     "compaction_skipped",
-                    {"message": "There is not enough uncompacted history yet."},
+                    {"message": "There is no earlier history to compact yet."},
                 )
         finally:
             self._publish("compaction_finished", {})
@@ -310,38 +310,21 @@ class AgentRunner:
     def _maybe_compact_history(self, force: bool = False) -> list[dict[str, Any]] | None:
         """Summarize older history before the input window becomes a hard stop.
 
-        The original items deliberately stay in the database for the UI. Only
-        the model's working set is replaced, and the summary is refreshed from
-        the previous summary plus the newly accumulated items on later passes.
+        The original items deliberately stay in the database for the UI. The
+        compactor sees the complete transcript and only the model's working set
+        is replaced by its fresh summary.
         """
         if not force and not self._needs_compaction():
             return None
 
         history = self._store.load_items(self._conversation.id)
-        already_compacted = max(
-            0, min(self._conversation.compacted_item_count, len(history))
-        )
-        uncompressed = history[already_compacted:]
-        keep = max(1, self._config.compaction_recent_items)
-        if len(uncompressed) <= keep:
+        if not history:
             return None
 
-        prefix = uncompressed[:-keep]
-        summary_input: list[dict[str, Any]] = []
-        if self._conversation.compaction_summary.strip():
-            summary_input.append(
-                {
-                    "role": "developer",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": "Earlier working memory:\n"
-                            + self._conversation.compaction_summary,
-                        }
-                    ],
-                }
-            )
-        summary_input.extend(prefix)
+        # The transcript stays in SQLite for the user. The compactor receives
+        # that complete transcript every time and replaces the model's entire
+        # working history with one fresh summary.
+        summary_input = history
 
         self._publish(
             "compaction_started",
@@ -350,7 +333,7 @@ class AgentRunner:
         try:
             response = self._session.send_responses(
                 {
-                    "model": self._run_model,
+                    "model": self._config.compaction_model,
                     "instructions": COMPACTION_INSTRUCTIONS,
                     "input": summary_input,
                 },
@@ -367,7 +350,7 @@ class AgentRunner:
             self._publish("compaction_failed", {"message": str(error)})
             return None
 
-        compacted_count = len(history) - keep
+        compacted_count = len(history)
         self._store.save_compaction(self._conversation.id, summary, compacted_count)
         self._conversation.compaction_summary = summary
         self._conversation.compacted_item_count = compacted_count
@@ -376,7 +359,7 @@ class AgentRunner:
             "compacted",
             {
                 "compacted_items": compacted_count,
-                "kept_items": keep,
+                "kept_items": 0,
                 "context_tokens": 0,
             },
         )

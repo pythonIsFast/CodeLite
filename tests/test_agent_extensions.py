@@ -24,7 +24,8 @@ class FakeSession:
     def context_window(self, _model: str) -> int:
         return 10_000
 
-    def send_responses(self, _body, stream=False):
+    def send_responses(self, body, stream=False):
+        self.last_body = body
         self.last_stream = stream
         return {
             "output_text": "Compact working summary.",
@@ -140,22 +141,26 @@ def after_tool(name, arguments, output, context):
             ]
             store.append_items(conversation.id, items)
             events: list[tuple[str, dict]] = []
+            session = FakeSession()
             runner = AgentRunner(
-                session=FakeSession(),
+                session=session,
                 store=store,
                 conversation=conversation,
                 permissions=PermissionManager(Mode.BYPASS, lambda *_: None),
                 publish=lambda event, data: events.append((event, data)),
-                config=AppConfig(data_dir=base, compaction_recent_items=2),
+                config=AppConfig(data_dir=base, compaction_model="compact-fixture"),
             )
 
+            runner.compact()
             runner.compact()
 
             refreshed = store.get_conversation(conversation.id)
             self.assertEqual(store.count_items(conversation.id), 6)
-            self.assertEqual(refreshed.compacted_item_count, 4)  # type: ignore[union-attr]
+            self.assertEqual(refreshed.compacted_item_count, 6)  # type: ignore[union-attr]
             self.assertEqual(refreshed.compaction_summary, "Compact working summary.")  # type: ignore[union-attr]
-            self.assertIn("compacted", [event for event, _ in events])
+            self.assertEqual(session.last_body["model"], "compact-fixture")
+            self.assertEqual(session.last_body["input"], items)
+            self.assertEqual([event for event, _ in events].count("compacted"), 2)
             self.assertEqual(events[-1][0], "compaction_finished")
 
     def test_auto_model_uses_luna_router_and_keeps_its_decision_visible(self) -> None:

@@ -50,12 +50,6 @@ MAX_TOOL_OUTPUT_CHARS = 30_000
 #: The hard stop remains only as a safe fallback if compaction itself fails.
 CONTEXT_COMPACT_FRACTION = 0.80
 CONTEXT_STOP_FRACTION = 0.95
-# Keep the most recent conversation exchange intact when replacing older
-# history with a compact working summary. Responses items are deliberately
-# counted rather than guessed from characters; token usage remains upstream's
-# source of truth.
-COMPACTION_RECENT_ITEMS = 16
-
 # Offline fallback only. Codex's /models catalog does report each model's real
 # `context_window`, and that is what the app prefers -- see
 # `Session.context_window`. These are the figures the catalog returned on
@@ -141,6 +135,7 @@ class AppConfig:
     port: int = DEFAULT_PORT
     agent_model: str = DEFAULT_AGENT_MODEL
     judge_model: str = DEFAULT_JUDGE_MODEL
+    compaction_model: str = DEFAULT_JUDGE_MODEL
     default_permission_mode: Mode = Mode.ASK
     #: Empty means each model's own default from Codex's catalog.
     default_reasoning_effort: str = ""
@@ -148,7 +143,6 @@ class AppConfig:
     max_tool_output_chars: int = MAX_TOOL_OUTPUT_CHARS
     context_stop_fraction: float = CONTEXT_STOP_FRACTION
     context_compact_fraction: float = CONTEXT_COMPACT_FRACTION
-    compaction_recent_items: int = COMPACTION_RECENT_ITEMS
     #: Which models the Auto picker may route to, and how it recovers.
     auto_router_model: str = DEFAULT_JUDGE_MODEL
     auto_fallback_model: str = "gpt-5.6-terra"
