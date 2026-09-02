@@ -34,7 +34,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, Response, jsonify, render_template, request, send_file
+from flask import Flask, Response, jsonify, make_response, redirect, render_template, request, send_file
 from werkzeug.utils import secure_filename
 
 from ..config import (
@@ -50,6 +50,7 @@ from ..updater import UpdateError, check_update, install_update
 from ..permission.modes import Mode
 from ..provider.auth import AuthError
 from ..provider.login import ChatGPTLoginManager
+from ..remote import REMOTE_COOKIE, RemoteError, RemoteManager
 from ..project.context import (
     GLOBAL_MEMORY_PATH,
     LSP_CONFIG_PATH,
@@ -140,12 +141,19 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
     app.config["login_manager"] = ChatGPTLoginManager(
         app.config["runtime"].session.config
     )
+    app.config["remote_manager"] = RemoteManager(
+        app.config["runtime"].config.data_dir,
+        app.config["runtime"].config.base_url,
+    )
 
     def rt() -> Runtime:
         return app.config["runtime"]
 
     def login_manager() -> ChatGPTLoginManager:
         return app.config["login_manager"]
+
+    def remote_manager() -> RemoteManager:
+        return app.config["remote_manager"]
 
     def _conversation_or_404(conversation_id: str):
         conversation = rt().store.get_conversation(conversation_id)
@@ -168,7 +176,51 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         candidate = (root / path.removeprefix(prefix)).resolve()
         return candidate if root in candidate.parents else None
 
+    @app.before_request
+    def require_remote_login():
+        manager = remote_manager()
+        if not manager.is_remote_host(request.host):
+            return None
+        if request.path == "/remote/login" or request.path.startswith("/static/"):
+            return None
+        if manager.authenticated(request.cookies.get(REMOTE_COOKIE)):
+            return None
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Remote login required."}), 401
+        return redirect("/remote/login")
+
+    @app.after_request
+    def remote_security_headers(response):
+        if remote_manager().is_remote_host(request.host):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+
     # -- pages ---------------------------------------------------------------
+
+    @app.route("/remote/login", methods=["GET", "POST"])
+    def remote_login():
+        error = ""
+        if request.method == "POST":
+            try:
+                token = remote_manager().login(str(request.form.get("password") or ""))
+            except RemoteError as exc:
+                token, error = None, str(exc)
+            if token:
+                response = make_response(redirect("/"))
+                response.set_cookie(
+                    REMOTE_COOKIE,
+                    token,
+                    secure=True,
+                    httponly=True,
+                    samesite="Strict",
+                    max_age=12 * 60 * 60,
+                )
+                return response
+            error = error or "Incorrect password."
+        return render_template("remote_login.html", error=error)
 
     @app.get("/")
     def index() -> str:
@@ -213,6 +265,37 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
             return jsonify({"error": str(error), "kind": "auth"}), 401
         except Exception as error:  # noqa: BLE001 - surfaced to the UI as-is
             return jsonify({"error": str(error)}), 502
+
+    # -- Remote Control -------------------------------------------------------
+
+    @app.get("/api/remote")
+    def remote_status():
+        return jsonify(remote_manager().status())
+
+    @app.post("/api/remote/download")
+    def remote_download():
+        try:
+            return jsonify(remote_manager().download())
+        except RemoteError as error:
+            return jsonify({"error": str(error)}), 502
+
+    @app.post("/api/remote/remove")
+    def remote_remove():
+        try:
+            return jsonify(remote_manager().remove())
+        except RemoteError as error:
+            return jsonify({"error": str(error)}), 409
+
+    @app.post("/api/remote/start")
+    def remote_start():
+        try:
+            return jsonify(remote_manager().start()), 201
+        except RemoteError as error:
+            return jsonify({"error": str(error)}), 409
+
+    @app.post("/api/remote/stop")
+    def remote_stop():
+        return jsonify(remote_manager().stop())
 
     # -- application updates -------------------------------------------------
 

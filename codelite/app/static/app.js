@@ -40,6 +40,7 @@ const el = {
   newChat: $("new-chat"),
   toolCount: $("tool-count"),
   sidebarUpdate: $("sidebar-update"),
+  sidebarRemote: $("sidebar-remote"),
   toast: $("toast"),
   permOverlay: $("permission-overlay"),
   permKind: $("perm-kind"),
@@ -87,6 +88,19 @@ const el = {
   settingsAuthOpenLink: $("settings-auth-open-link"),
   settingsAuthCopyLink: $("settings-auth-copy-link"),
   settingsUpdate: $("settings-update"),
+  remoteUnsupported: $("remote-unsupported"),
+  remoteDownload: $("remote-download"),
+  remoteDownloadButton: $("remote-download-button"),
+  remoteReady: $("remote-ready"),
+  remoteStart: $("remote-start"),
+  remoteRemove: $("remote-remove"),
+  remoteActive: $("remote-active"),
+  remoteUrl: $("remote-url"),
+  remotePassword: $("remote-password"),
+  remoteCopyUrl: $("remote-copy-url"),
+  remoteCopyPassword: $("remote-copy-password"),
+  remoteStop: $("remote-stop"),
+  remoteStatus: $("remote-status"),
   updateStatus: $("update-status"),
   updateButton: $("update-button"),
   globalMemory: $("global-memory"),
@@ -144,6 +158,8 @@ const state = {
   authPoll: null,
   authUrl: null,
   update: null,
+  remote: null,
+  remotePassword: "",
   attachments: [],
   uploadsInProgress: 0,
 };
@@ -218,6 +234,87 @@ async function loadProjectSettings() {
   el.projectSkills.textContent = skills.length
     ? `Skills: ${skills.map((skill) => skill.name).join(", ")}`
     : "Skills: none. Add Markdown skills under .codelite/skills/.";
+}
+
+function renderRemote(remote) {
+  state.remote = remote;
+  el.remoteUnsupported.hidden = remote.supported;
+  el.remoteDownload.hidden = !remote.supported || remote.installed;
+  el.remoteReady.hidden = !remote.supported || !remote.installed || remote.active;
+  el.remoteActive.hidden = !remote.active;
+  el.sidebarRemote.hidden = !remote.active;
+  if (remote.active) {
+    el.remoteUrl.value = remote.url || "Starting…";
+    el.remotePassword.value = state.remotePassword || "Shown only when the tunnel starts";
+  }
+}
+
+async function loadRemote() {
+  renderRemote(await get("/api/remote"));
+}
+
+async function downloadRemote() {
+  el.remoteDownloadButton.disabled = true;
+  el.remoteStatus.textContent = "Downloading and verifying cloudflared…";
+  try {
+    renderRemote(await post("/api/remote/download"));
+    el.remoteStatus.textContent = "cloudflared is ready.";
+  } catch (error) {
+    el.remoteStatus.textContent = error.message;
+  } finally {
+    el.remoteDownloadButton.disabled = false;
+  }
+}
+
+async function startRemote() {
+  el.remoteStart.disabled = true;
+  el.remoteStatus.textContent = "Starting secure tunnel…";
+  try {
+    const remote = await post("/api/remote/start");
+    state.remotePassword = remote.password || "";
+    renderRemote(remote);
+    el.remoteStatus.textContent = "Remote Control is active.";
+  } catch (error) {
+    el.remoteStatus.textContent = error.message;
+  } finally {
+    el.remoteStart.disabled = false;
+  }
+}
+
+async function stopRemote() {
+  el.remoteStop.disabled = true;
+  try {
+    state.remotePassword = "";
+    renderRemote(await post("/api/remote/stop"));
+    el.remoteStatus.textContent = "Remote Control stopped.";
+  } catch (error) {
+    el.remoteStatus.textContent = error.message;
+  } finally {
+    el.remoteStop.disabled = false;
+  }
+}
+
+async function removeRemote() {
+  el.remoteRemove.disabled = true;
+  try {
+    state.remotePassword = "";
+    renderRemote(await post("/api/remote/remove"));
+    el.remoteStatus.textContent = "cloudflared removed.";
+  } catch (error) {
+    el.remoteStatus.textContent = error.message;
+  } finally {
+    el.remoteRemove.disabled = false;
+  }
+}
+
+async function copyRemoteValue(input, label) {
+  try {
+    await navigator.clipboard.writeText(input.value);
+    toast(`${label} copied.`);
+  } catch {
+    input.select();
+    toast(`Select and copy the ${label.toLowerCase()}.`);
+  }
 }
 
 async function checkForUpdate() {
@@ -2275,6 +2372,21 @@ function initCustomSelects() {
   });
 }
 
+async function openSettings(tab = "account") {
+  await refreshAuth().catch((error) => toast(error.message, true));
+  await Promise.all([
+    loadGlobalSettings(),
+    loadProjectSettings(),
+    loadCodexImport(),
+    loadBehaviour(),
+    checkForUpdate(),
+    loadRemote(),
+  ]).catch((error) => toast(error.message, true));
+  el.importStatus.textContent = "";
+  selectSettingsTab(tab);
+  el.settingsOverlay.hidden = false;
+}
+
 function dataTransferHasFiles(dataTransfer) {
   if (!dataTransfer) return false;
   if (dataTransfer.files?.length) return true;
@@ -2288,7 +2400,13 @@ function wireEvents() {
   el.authCopyLink.addEventListener("click", copyAuthLink);
   el.settingsAuthCopyLink.addEventListener("click", copyAuthLink);
   el.updateButton.addEventListener("click", runUpdate);
-  el.sidebarUpdate.addEventListener("click", () => el.settingsButton.click());
+  el.sidebarUpdate.addEventListener("click", () => openSettings("account"));
+  el.remoteDownloadButton.addEventListener("click", downloadRemote);
+  el.remoteStart.addEventListener("click", startRemote);
+  el.remoteStop.addEventListener("click", stopRemote);
+  el.remoteRemove.addEventListener("click", removeRemote);
+  el.remoteCopyUrl.addEventListener("click", () => copyRemoteValue(el.remoteUrl, "URL"));
+  el.remoteCopyPassword.addEventListener("click", () => copyRemoteValue(el.remotePassword, "Password"));
   el.attachFiles.addEventListener("click", () => el.attachmentPicker.click());
   el.attachmentPicker.addEventListener("change", () => {
     addPastedFiles([...el.attachmentPicker.files]);
@@ -2320,19 +2438,8 @@ function wireEvents() {
     el.composer.classList.remove("dragging-files");
     addPastedFiles(clipboardFiles(event.dataTransfer));
   });
-  el.settingsButton.addEventListener("click", async () => {
-    await refreshAuth().catch((error) => toast(error.message, true));
-    await Promise.all([
-      loadGlobalSettings(),
-      loadProjectSettings(),
-      loadCodexImport(),
-      loadBehaviour(),
-      checkForUpdate(),
-    ]).catch((error) => toast(error.message, true));
-    el.importStatus.textContent = "";
-    selectSettingsTab("account");
-    el.settingsOverlay.hidden = false;
-  });
+  el.settingsButton.addEventListener("click", () => openSettings());
+  el.sidebarRemote.addEventListener("click", () => openSettings("remote"));
   for (const tab of el.settingsTabs) {
     tab.addEventListener("click", () => selectSettingsTab(tab.dataset.settingsTab));
   }
@@ -2606,6 +2713,7 @@ async function init() {
   fillModes(el.modeSelect, state.meta.default_mode);
   wireEvents();
   checkForUpdate();
+  loadRemote().catch(() => {});
   startClock();
   const auth = await refreshAuth();
   if (auth.authenticated) {

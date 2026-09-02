@@ -142,6 +142,21 @@ than failing strangely; and screenshots are WebKitGTK-specific today (Linux
 only) because pywebview itself exposes no screenshot call -- extending that to
 WebView2 on Windows is unimplemented, not merely untested.
 
+### Remote Control
+
+From **Settings → Remote Control**, Code Lite can expose its existing web UI
+through a password-protected Cloudflare Quick Tunnel. The agent, filesystem,
+tools, and permission checks keep running on the local computer; another device
+only receives the UI. Code Lite generates a new high-entropy password for every
+tunnel and invalidates all remote sessions when the tunnel stops.
+
+Remote Control is optional on Windows and Linux. It does not increase the normal
+installation size: `cloudflared` is downloaded only after pressing **Download
+cloudflared**, verified against the SHA-256 digest published with Cloudflare's
+latest release, and stored under Code Lite's data directory. Anyone with the URL
+and password has the same control as the local UI, including answering permission
+prompts, so share them only with a trusted device.
+
 ### Let Auto choose the right model
 
 Choose **Auto** in the model picker and Code Lite uses a lightweight routing step before every turn. Routine work stays economical; larger refactors, debugging, and higher-risk changes can receive a more capable model. The selected model (Luna, Terra, or Sol) and reason remain visible in chat, and routing falls back to the balanced option instead of defaulting to the most expensive model.

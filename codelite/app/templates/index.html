@@ -23,6 +23,7 @@
       <footer class="sidebar-foot">
         <span id="tool-count"></span>
         <button type="button" class="sidebar-update" id="sidebar-update" hidden></button>
+        <button type="button" class="sidebar-remote" id="sidebar-remote" hidden>● Remote</button>
         <button type="button" class="settings-button" id="settings-button"
                 title="Settings" aria-label="Settings">
           <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
@@ -241,6 +242,8 @@
         <button type="button" class="settings-tab active" role="tab"
                 aria-selected="true" data-settings-tab="account">Account</button>
         <button type="button" class="settings-tab" role="tab"
+                aria-selected="false" data-settings-tab="remote">Remote Control</button>
+        <button type="button" class="settings-tab" role="tab"
                 aria-selected="false" data-settings-tab="memory">Global memory</button>
         <button type="button" class="settings-tab" id="project-settings-tab" role="tab"
                 aria-selected="false" data-settings-tab="project">Project</button>
@@ -264,6 +267,28 @@
           <p class="account-detail" id="update-status"></p>
           <button type="button" class="btn" id="update-button">Check for updates</button>
         </div>
+      </section>
+      <section class="settings-panel" data-settings-panel="remote" hidden>
+        <h3>Remote Control</h3>
+        <p class="account-detail">Access this Code Lite instance from another device. The agent and all tools continue running on this computer.</p>
+        <div id="remote-unsupported" hidden>Remote Control is currently available on Windows and Linux.</div>
+        <div id="remote-download" hidden>
+          <p class="account-detail">cloudflared is downloaded only when you request it and stored in the Code Lite data directory.</p>
+          <button type="button" class="btn" id="remote-download-button">Download cloudflared</button>
+        </div>
+        <div id="remote-ready" hidden>
+          <button type="button" class="btn primary" id="remote-start">Start Remote Control</button>
+          <button type="button" class="btn" id="remote-remove">Remove cloudflared</button>
+        </div>
+        <div id="remote-active" hidden>
+          <p class="account-detail">Anyone with this URL and password can control Code Lite and answer permission prompts.</p>
+          <label class="field-label" for="remote-url">Public URL</label>
+          <div class="remote-value-row"><input id="remote-url" readonly /><button type="button" class="btn" id="remote-copy-url">Copy</button></div>
+          <label class="field-label" for="remote-password">Password</label>
+          <div class="remote-value-row"><input id="remote-password" readonly /><button type="button" class="btn" id="remote-copy-password">Copy</button></div>
+          <button type="button" class="btn danger" id="remote-stop">Stop Remote Control</button>
+        </div>
+        <p class="auth-status" id="remote-status"></p>
       </section>
       <section class="settings-panel" data-settings-panel="memory" hidden>
         <h3>Global memory</h3>
