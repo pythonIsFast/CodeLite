@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import gzip
 import html
+import http.client
 import ipaddress
 import json
 import socket
@@ -16,7 +17,14 @@ import zlib
 from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import (
+    HTTPHandler,
+    HTTPSHandler,
+    HTTPRedirectHandler,
+    ProxyHandler,
+    Request,
+    build_opener,
+)
 
 from .base import Tool, ToolError, object_schema
 from .context import ToolContext
@@ -27,20 +35,97 @@ MAX_TEXT_CHARS = 30_000
 USER_AGENT = "CodeLite/1.0 (+local coding agent)"
 
 
-def _validate_public_url(url: str) -> None:
+def _public_addresses(url: str) -> tuple[str, ...]:
+    """Resolve a public URL once, returning the exact addresses safe to connect to.
+
+    The caller must use these addresses directly. Resolving here and later
+    connecting by hostname leaves a DNS-rebinding window in between.
+    """
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ToolError("Only public http:// and https:// URLs are supported.")
     if parsed.username or parsed.password:
         raise ToolError("URLs containing credentials are not supported.")
     try:
-        addresses = socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)
+        resolved = socket.getaddrinfo(
+            parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80),
+            type=socket.SOCK_STREAM,
+        )
     except OSError as error:
         raise ToolError(f"Could not resolve `{parsed.hostname}`: {error}") from error
-    for address in addresses:
-        ip = ipaddress.ip_address(address[4][0])
-        if not ip.is_global:
-            raise ToolError("Private, local, and reserved network addresses are blocked.")
+
+    addresses = tuple(dict.fromkeys(item[4][0] for item in resolved))
+    if not addresses or any(not ipaddress.ip_address(address).is_global for address in addresses):
+        raise ToolError("Private, local, and reserved network addresses are blocked.")
+    return addresses
+
+
+def _validate_public_url(url: str) -> None:
+    _public_addresses(url)
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    """HTTP connection that never resolves its hostname after validation."""
+
+    def __init__(self, host: str, *, addresses: tuple[str, ...], **kwargs: Any) -> None:
+        super().__init__(host, **kwargs)
+        self._addresses = addresses
+
+    def connect(self) -> None:
+        error: OSError | None = None
+        for address in self._addresses:
+            try:
+                self.sock = socket.create_connection(
+                    (address, self.port), self.timeout, self.source_address
+                )
+                return
+            except OSError as exc:
+                error = exc
+        raise error or OSError("No validated address was available.")
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """TLS variant that pins the TCP peer but preserves hostname validation/SNI."""
+
+    def __init__(self, host: str, *, addresses: tuple[str, ...], **kwargs: Any) -> None:
+        super().__init__(host, **kwargs)
+        self._addresses = addresses
+
+    def connect(self) -> None:
+        error: OSError | None = None
+        for address in self._addresses:
+            try:
+                sock = socket.create_connection(
+                    (address, self.port), self.timeout, self.source_address
+                )
+                break
+            except OSError as exc:
+                error = exc
+        else:
+            raise error or OSError("No validated address was available.")
+        self.sock = sock
+        if self._tunnel_host:
+            self._tunnel()
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
+
+
+class _PinnedHTTPHandler(HTTPHandler):
+    def http_open(self, request: Request):
+        addresses = _public_addresses(request.full_url)
+        connection = lambda host, **kwargs: _PinnedHTTPConnection(
+            host, addresses=addresses, **kwargs
+        )
+        return self.do_open(connection, request)
+
+
+class _PinnedHTTPSHandler(HTTPSHandler):
+    def https_open(self, request: Request):
+        addresses = _public_addresses(request.full_url)
+        return self.do_open(
+            lambda host, **kwargs: _PinnedHTTPSConnection(host, addresses=addresses, **kwargs),
+            request,
+            context=self._context,
+        )
 
 
 class _SafeRedirects(HTTPRedirectHandler):
@@ -60,7 +145,13 @@ def _download(url: str) -> tuple[str, str, bytes]:
         },
     )
     try:
-        with build_opener(_SafeRedirects()).open(request, timeout=15) as response:
+        # Disable environment proxies: they can redirect a validated request to
+        # an arbitrary private endpoint. Each handler pins its TCP peer to the
+        # public address set obtained immediately before connecting.
+        opener = build_opener(
+            ProxyHandler({}), _PinnedHTTPHandler(), _PinnedHTTPSHandler(), _SafeRedirects()
+        )
+        with opener.open(request, timeout=15) as response:
             final_url = response.geturl()
             _validate_public_url(final_url)
             content_type = response.headers.get_content_type()

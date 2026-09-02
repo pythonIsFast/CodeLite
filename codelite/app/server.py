@@ -137,6 +137,9 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         template_folder=str(assets / "templates"),
         static_folder=str(assets / "static"),
     )
+    # Enforced by Flask/Werkzeug before form parsing or JSON decoding, so a
+    # remote client cannot consume memory with an oversized request body.
+    app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
     app.config["runtime"] = runtime or Runtime(config)
     app.config["login_manager"] = ChatGPTLoginManager(
         app.config["runtime"].session.config
