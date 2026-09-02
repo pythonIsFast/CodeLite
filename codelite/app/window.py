@@ -229,6 +229,19 @@ def run(config: AppConfig | None = None, headless: bool = False) -> None:
         _block_forever()
         return
 
+    if sys.platform.startswith("linux"):
+        try:
+            import gi  # noqa: PLC0415 - optional native Linux integration
+
+            gi.require_version("Gtk", "3.0")
+            from gi.repository import Gtk  # noqa: PLC0415
+
+            # Keep the native window associated with the installed desktop
+            # entry instead of showing it as a second application in the dock.
+            Gtk.Window.set_wmclass("code-lite", "Code Lite")
+        except Exception:  # noqa: BLE001 - GTK integration is platform dependent
+            logger.debug("Could not set the Linux window class", exc_info=True)
+
     webview.create_window(
         WINDOW_TITLE,
         config.base_url,
