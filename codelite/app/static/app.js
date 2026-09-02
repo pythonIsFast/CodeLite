@@ -263,10 +263,9 @@ async function runUpdate() {
     const result = await post("/api/update");
     el.updateStatus.textContent = `Preparing Code Lite ${result.version} for installation…`;
     el.updateButton.textContent = "Restarting for update";
-    if (!window.pywebview?.api?.quit_for_update) {
-      throw new Error("Close Code Lite to continue the update.");
+    if (window.pywebview?.api?.quit_for_update) {
+      await window.pywebview.api.quit_for_update();
     }
-    await window.pywebview.api.quit_for_update();
   } catch (error) {
     el.updateStatus.textContent = error.message;
     el.updateButton.textContent = "Try again";

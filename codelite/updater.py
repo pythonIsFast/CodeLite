@@ -150,6 +150,7 @@ def _install_after_exit(
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -158,12 +159,21 @@ parent_pid = int(sys.argv[1])
 command = json.loads(sys.argv[2])
 restart = json.loads(sys.argv[3])
 directory = sys.argv[4]
-while True:
+deadline = time.monotonic() + 5
+while time.monotonic() < deadline:
     try:
         os.kill(parent_pid, 0)
     except OSError:
         break
     time.sleep(0.2)
+else:
+    os.kill(parent_pid, signal.SIGTERM)
+    for _ in range(50):
+        try:
+            os.kill(parent_pid, 0)
+        except OSError:
+            break
+        time.sleep(0.2)
 try:
     if subprocess.run(command).returncode == 0:
         subprocess.Popen(restart)
