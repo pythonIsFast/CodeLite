@@ -59,6 +59,9 @@ class ToolContext:
     todos: list[dict[str, str]] = field(default_factory=list)
     #: One-turn multimodal inputs queued by tools such as ``view_image``.
     pending_model_inputs: list[dict[str, Any]] = field(default_factory=list)
+    #: Exact central upload files explicitly attached to this turn. They are
+    #: readable but never writable through workspace tools.
+    attachment_paths: frozenset[Path] = field(default_factory=frozenset)
     publish: Callable[[str, dict[str, Any]], None] | None = None
 
     def __post_init__(self) -> None:
@@ -132,6 +135,16 @@ class ToolContext:
                 "Only paths inside the workspace can be accessed."
             )
         return resolved
+
+    def resolve_read(self, raw_path: str) -> Path:
+        """Resolve a workspace path or an exact file attached to this turn."""
+        try:
+            return self.resolve(raw_path)
+        except PathOutsideWorkspace:
+            candidate = Path(raw_path).expanduser().resolve()
+            if candidate in self.attachment_paths:
+                return candidate
+            raise
 
     def relative(self, path: Path) -> str:
         """Render a path workspace-relative for display back to the model."""

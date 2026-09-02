@@ -74,7 +74,7 @@ def _read_text(path: Path) -> str:
 
 
 def _run_read_file(args: dict[str, Any], ctx: ToolContext) -> str:
-    path = ctx.resolve(args.get("path", ""))
+    path = ctx.resolve_read(args.get("path", ""))
     offset = max(int(args.get("offset") or 0), 0)
     limit = int(args.get("limit") or DEFAULT_READ_LIMIT)
 

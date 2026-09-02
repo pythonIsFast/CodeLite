@@ -22,7 +22,7 @@ SUPPORTED_IMAGE_TYPES = frozenset({"image/png", "image/jpeg", "image/gif", "imag
 
 
 def _run_view_image(args: dict[str, Any], ctx: ToolContext) -> str:
-    path = ctx.resolve(args.get("path", ""))
+    path = ctx.resolve_read(args.get("path", ""))
     if not path.is_file():
         raise ToolError(f"{ctx.relative(path)} is not an image file.")
     if path.stat().st_size > MAX_IMAGE_BYTES:

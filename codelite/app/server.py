@@ -157,6 +157,17 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         payload = request.get_json(silent=True)
         return payload if isinstance(payload, dict) else {}
 
+    def _upload_dir(conversation_id: str) -> Path:
+        return (rt().config.data_dir / "uploads" / conversation_id).resolve()
+
+    def _attachment_path(conversation_id: str, path: str) -> Path | None:
+        prefix = f"uploads/{conversation_id}/"
+        if not path.startswith(prefix):
+            return None
+        root = _upload_dir(conversation_id)
+        candidate = (root / path.removeprefix(prefix)).resolve()
+        return candidate if root in candidate.parents else None
+
     # -- pages ---------------------------------------------------------------
 
     @app.get("/")
@@ -319,9 +330,11 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         if error:
             return error
         workspace = Path(conversation.workspace).resolve()
-        candidate = (workspace / file_path).resolve()
-        if candidate == workspace or workspace not in candidate.parents:
-            return jsonify({"error": "File path is outside the workspace."}), 400
+        candidate = _attachment_path(conversation_id, file_path)
+        if candidate is None:
+            candidate = (workspace / file_path).resolve()
+            if candidate == workspace or workspace not in candidate.parents:
+                return jsonify({"error": "File path is outside the workspace."}), 400
         if not candidate.is_file():
             return jsonify({"error": "File not found."}), 404
         return send_file(candidate, as_attachment=False, conditional=True)
@@ -484,7 +497,7 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
 
     @app.post("/api/conversations/<conversation_id>/uploads")
     def upload_file(conversation_id: str):
-        """Accept a user-pasted file and save it inside that chat's workspace."""
+        """Accept a user-selected file in Code Lite's central data directory."""
         conversation, error = _conversation_or_404(conversation_id)
         if error:
             return error
@@ -492,10 +505,7 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         if uploaded is None or not uploaded.filename:
             return jsonify({"error": "Attach one file in the `file` field."}), 400
         filename = secure_filename(uploaded.filename) or "pasted-file"
-        workspace = Path(conversation.workspace).resolve()
-        upload_dir = (workspace / "uploads").resolve()
-        if workspace not in upload_dir.parents:
-            return jsonify({"error": "Upload directory leaves the workspace."}), 400
+        upload_dir = _upload_dir(conversation_id)
         upload_dir.mkdir(parents=True, exist_ok=True)
         target = upload_dir / f"{uuid.uuid4().hex}_{filename}"
         temporary = None
@@ -521,7 +531,7 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
 
         return jsonify(
             {
-                "path": str(target.relative_to(workspace)),
+                "path": f"uploads/{conversation_id}/{target.name}",
                 "name": filename,
                 "size": size,
                 "type": uploaded.mimetype or "application/octet-stream",
@@ -547,16 +557,24 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         for item in supplied_attachments or []:
             if not isinstance(item, dict) or not isinstance(item.get("path"), str):
                 return jsonify({"error": "Each attachment needs a file path."}), 400
-            candidate = (workspace / item["path"]).resolve()
-            if candidate == workspace or workspace not in candidate.parents or not candidate.is_file():
-                return jsonify({"error": "An attachment is not a workspace file."}), 400
+            supplied_path = item["path"]
+            candidate = _attachment_path(conversation_id, supplied_path)
+            if candidate is None:
+                candidate = (workspace / supplied_path).resolve()
+                if candidate == workspace or workspace not in candidate.parents:
+                    return jsonify({"error": "An attachment is outside the workspace."}), 400
+            if not candidate.is_file():
+                return jsonify({"error": "An attachment file was not found."}), 400
             attachments.append(
                 {
-                    "path": str(candidate.relative_to(workspace)),
+                    "path": supplied_path,
+                    "resolved_path": str(candidate),
                     "name": str(item.get("name") or candidate.name),
                     "type": str(item.get("type") or "application/octet-stream"),
                 }
             )
+            if candidate != (workspace / supplied_path).resolve():
+                text = text.replace(supplied_path, str(candidate))
         try:
             rt().start_run(conversation, text, attachments)
         except RunInProgress as busy:

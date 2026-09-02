@@ -176,6 +176,11 @@ class AgentRunner:
             data_dir=self._config.data_dir,
             model=self._run_model,
             task_prompt=user_text,
+            attachment_paths=frozenset(
+                Path(item["resolved_path"]).resolve()
+                for item in attachments or []
+                if isinstance(item.get("resolved_path"), str)
+            ),
             shell_timeout_seconds=self._config.shell_timeout_seconds,
             max_tool_output_chars=self._config.max_tool_output_chars,
             publish=self._publish,

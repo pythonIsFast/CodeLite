@@ -17,7 +17,7 @@ from .context import ToolContext
 
 
 def _run_showcase_file(args: dict[str, Any], ctx: ToolContext) -> str:
-    path = ctx.resolve(args.get("path", ""))
+    path = ctx.resolve_read(args.get("path", ""))
     if not path.exists():
         raise ToolError(f"{ctx.relative(path)} does not exist.")
     if not path.is_file():

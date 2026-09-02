@@ -22,6 +22,8 @@ const el = {
   fastToggle: $("fast-toggle"),
   modeSelect: $("mode-select"),
   compactContext: $("compact-context"),
+  attachmentPicker: $("attachment-picker"),
+  attachFiles: $("attach-files"),
   composer: $("composer"),
   prompt: $("prompt"),
   attachments: $("composer-attachments"),
@@ -2288,6 +2290,11 @@ function wireEvents() {
   el.settingsAuthCopyLink.addEventListener("click", copyAuthLink);
   el.updateButton.addEventListener("click", runUpdate);
   el.sidebarUpdate.addEventListener("click", () => el.settingsButton.click());
+  el.attachFiles.addEventListener("click", () => el.attachmentPicker.click());
+  el.attachmentPicker.addEventListener("change", () => {
+    addPastedFiles([...el.attachmentPicker.files]);
+    el.attachmentPicker.value = "";
+  });
 
   document.addEventListener("dragover", (event) => {
     if (dataTransferHasFiles(event.dataTransfer)) event.preventDefault();

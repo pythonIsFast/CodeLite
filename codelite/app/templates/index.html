@@ -56,6 +56,7 @@
       </div>
 
       <form class="composer" id="composer">
+        <input type="file" id="attachment-picker" multiple hidden />
         <textarea id="prompt" rows="1" placeholder="Ask Code Lite to change something, or drop files here…"
                   autocomplete="off" spellcheck="false"></textarea>
         <div class="composer-attachments" id="composer-attachments" hidden></div>
@@ -65,6 +66,8 @@
             <button type="button" class="custom-select-trigger" aria-haspopup="listbox" aria-expanded="false"></button>
             <div class="custom-select-menu" role="listbox" hidden></div>
           </div>
+          <button type="button" class="compact-button" id="attach-files"
+                  title="Attach files">Attach</button>
           <button type="button" class="compact-button" id="compact-context"
                   title="Compact conversation context">Compact</button>
           <span class="usage" id="usage" hidden title="">
