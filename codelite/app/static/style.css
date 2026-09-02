@@ -630,6 +630,10 @@ button { cursor: pointer; }
   transition: border-color .15s;
 }
 .composer:focus-within { border-color: var(--text-faint); }
+.composer.dragging-files {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-raised));
+}
 
 .composer textarea {
   border: 0;

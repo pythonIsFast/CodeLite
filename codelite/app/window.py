@@ -232,15 +232,14 @@ def run(config: AppConfig | None = None, headless: bool = False) -> None:
     if sys.platform.startswith("linux"):
         try:
             import gi  # noqa: PLC0415 - optional native Linux integration
+            from gi.repository import GLib  # noqa: PLC0415
 
-            gi.require_version("Gtk", "3.0")
-            from gi.repository import Gtk  # noqa: PLC0415
-
-            # Keep the native window associated with the installed desktop
-            # entry instead of showing it as a second application in the dock.
-            Gtk.Window.set_wmclass("code-lite", "Code Lite")
+            # GTK and Wayland derive the window's desktop identity from the
+            # program name when pywebview creates its application without an ID.
+            GLib.set_prgname("code-lite")
+            GLib.set_application_name(WINDOW_TITLE)
         except Exception:  # noqa: BLE001 - GTK integration is platform dependent
-            logger.debug("Could not set the Linux window class", exc_info=True)
+            logger.debug("Could not set the Linux application identity", exc_info=True)
 
     webview.create_window(
         WINDOW_TITLE,
@@ -250,7 +249,12 @@ def run(config: AppConfig | None = None, headless: bool = False) -> None:
         min_size=(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT),
         js_api=JsApi(),
     )
-    webview.start()
+    icon_candidates = (
+        Path(__file__).with_name("static") / "icon.png",
+        Path("/usr/share/icons/hicolor/256x256/apps/code-lite.png"),
+    )
+    icon = next((str(path) for path in icon_candidates if path.is_file()), None)
+    webview.start(icon=icon)
 
 
 def _block_forever() -> None:

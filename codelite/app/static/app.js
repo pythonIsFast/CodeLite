@@ -2220,6 +2220,22 @@ function wireEvents() {
   el.settingsLogin.addEventListener("click", startAuthLogin);
   el.authCopyLink.addEventListener("click", copyAuthLink);
   el.settingsAuthCopyLink.addEventListener("click", copyAuthLink);
+
+  for (const eventName of ["dragenter", "dragover"]) {
+    el.composer.addEventListener(eventName, (event) => {
+      if (!event.dataTransfer?.types.includes("Files")) return;
+      event.preventDefault();
+      el.composer.classList.add("dragging-files");
+    });
+  }
+  for (const eventName of ["dragleave", "drop"]) {
+    el.composer.addEventListener(eventName, (event) => {
+      if (!event.dataTransfer?.types.includes("Files")) return;
+      event.preventDefault();
+      el.composer.classList.remove("dragging-files");
+      if (eventName === "drop") addPastedFiles(clipboardFiles(event.dataTransfer));
+    });
+  }
   el.settingsButton.addEventListener("click", async () => {
     await refreshAuth().catch((error) => toast(error.message, true));
     await Promise.all([

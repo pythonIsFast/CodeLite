@@ -8,4 +8,4 @@ Icon=code-lite
 Terminal=false
 Categories=Development;IDE;
 Keywords=code;agent;ai;chatgpt;codex;
-StartupWMClass=Code Lite
+StartupWMClass=code-lite
