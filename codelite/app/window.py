@@ -151,6 +151,13 @@ class JsApi:
             logger.warning("Could not open the ChatGPT login URL in a browser", exc_info=True)
         return False
 
+    def quit_for_update(self) -> bool:
+        """Close the app after the update runner has been started."""
+        import webview  # noqa: PLC0415 - only reachable once pywebview is running
+
+        threading.Timer(0.5, webview.windows[0].destroy).start()
+        return True
+
     def read_clipboard_image(self) -> dict[str, str] | None:
         """Read a screenshot from the native Linux clipboard as a PNG.
 

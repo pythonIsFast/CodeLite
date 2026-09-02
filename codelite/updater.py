@@ -137,6 +137,56 @@ def _download(url: str, target: Path) -> None:
         raise UpdateError(f"Could not download the update: {error}") from error
 
 
+def _install_after_exit(
+    installer: Path, platform: str, directory: Path, parent_pid: int
+) -> None:
+    restart = ["code-lite"] if platform == "linux-deb" else [sys.executable]
+    command = (
+        ["pkexec", "apt-get", "install", "-y", str(installer)]
+        if platform == "linux-deb"
+        else [str(installer)]
+    )
+    runner = """
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+
+parent_pid = int(sys.argv[1])
+command = json.loads(sys.argv[2])
+restart = json.loads(sys.argv[3])
+directory = sys.argv[4]
+while True:
+    try:
+        os.kill(parent_pid, 0)
+    except OSError:
+        break
+    time.sleep(0.2)
+try:
+    if subprocess.run(command).returncode == 0:
+        subprocess.Popen(restart)
+finally:
+    shutil.rmtree(directory, ignore_errors=True)
+"""
+    try:
+        subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                runner,
+                str(parent_pid),
+                json.dumps(command),
+                json.dumps(restart),
+                str(directory),
+            ],
+            start_new_session=True,
+        )
+    except OSError as error:
+        raise UpdateError(f"Could not start the installer: {error}") from error
+
+
 def install_update() -> dict[str, str]:
     platform, current = _installed_version()
     if not platform or not current:
@@ -176,11 +226,5 @@ def install_update() -> dict[str, str]:
     if not expected_hash or actual_hash != expected_hash:
         raise UpdateError("The downloaded installer's SHA-256 checksum did not match.")
 
-    try:
-        if platform == "linux-deb":
-            subprocess.Popen(["pkexec", "apt-get", "install", "-y", str(installer)])
-        else:
-            subprocess.Popen([str(installer)])
-    except OSError as error:
-        raise UpdateError(f"Could not start the installer: {error}") from error
+    _install_after_exit(installer, platform, directory, os.getpid())
     return {"status": "started", "version": latest}

@@ -44,6 +44,18 @@ def test_check_update_finds_debian_asset(monkeypatch):
     assert status["latest_version"] == "1.5.0"
 
 
+def test_installer_runner_waits_for_the_current_process(monkeypatch, tmp_path: Path):
+    calls = []
+    monkeypatch.setattr(updater.subprocess, "Popen", lambda args, **kwargs: calls.append((args, kwargs)))
+
+    updater._install_after_exit(tmp_path / "update.deb", "linux-deb", tmp_path, 123)
+
+    args, kwargs = calls[0]
+    assert args[:2] == [updater.sys.executable, "-c"]
+    assert "pkexec" in args[4]
+    assert kwargs["start_new_session"] is True
+
+
 def test_sha256_streams_file(tmp_path: Path):
     path = tmp_path / "installer"
     path.write_bytes(b"Code Lite")

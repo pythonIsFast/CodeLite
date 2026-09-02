@@ -37,6 +37,7 @@ const el = {
   planLabel: $("plan-label"),
   newChat: $("new-chat"),
   toolCount: $("tool-count"),
+  sidebarUpdate: $("sidebar-update"),
   toast: $("toast"),
   permOverlay: $("permission-overlay"),
   permKind: $("perm-kind"),
@@ -224,7 +225,11 @@ async function checkForUpdate() {
     const update = await get("/api/update");
     state.update = update;
     el.settingsUpdate.hidden = !update.supported;
+    el.sidebarUpdate.hidden = !(update.supported && update.available && update.asset_available);
     if (!update.supported) return;
+    if (!el.sidebarUpdate.hidden) {
+      el.sidebarUpdate.textContent = `Update ${update.latest_version} available`;
+    }
     if (!update.available) {
       el.updateStatus.textContent = `Code Lite ${update.current_version} is up to date.`;
       el.updateButton.textContent = "Check again";
@@ -236,6 +241,7 @@ async function checkForUpdate() {
       el.updateButton.textContent = "Install update";
     }
   } catch (error) {
+    el.sidebarUpdate.hidden = true;
     el.settingsUpdate.hidden = false;
     el.updateStatus.textContent = error.message;
     el.updateButton.textContent = "Try again";
@@ -253,8 +259,12 @@ async function runUpdate() {
   el.updateStatus.textContent = "Downloading and verifying the update…";
   try {
     const result = await post("/api/update");
-    el.updateStatus.textContent = `Installer for ${result.version} started. Follow the system prompt, then restart Code Lite.`;
-    el.updateButton.textContent = "Installer started";
+    el.updateStatus.textContent = `Preparing Code Lite ${result.version} for installation…`;
+    el.updateButton.textContent = "Restarting for update";
+    if (!window.pywebview?.api?.quit_for_update) {
+      throw new Error("Close Code Lite to continue the update.");
+    }
+    await window.pywebview.api.quit_for_update();
   } catch (error) {
     el.updateStatus.textContent = error.message;
     el.updateButton.textContent = "Try again";
@@ -2277,6 +2287,7 @@ function wireEvents() {
   el.authCopyLink.addEventListener("click", copyAuthLink);
   el.settingsAuthCopyLink.addEventListener("click", copyAuthLink);
   el.updateButton.addEventListener("click", runUpdate);
+  el.sidebarUpdate.addEventListener("click", () => el.settingsButton.click());
 
   document.addEventListener("dragover", (event) => {
     if (dataTransferHasFiles(event.dataTransfer)) event.preventDefault();
@@ -2588,6 +2599,7 @@ async function init() {
   initCustomSelects();
   fillModes(el.modeSelect, state.meta.default_mode);
   wireEvents();
+  checkForUpdate();
   startClock();
   const auth = await refreshAuth();
   if (auth.authenticated) {

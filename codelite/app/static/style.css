@@ -236,6 +236,19 @@ button { cursor: pointer; }
   color: var(--text-faint);
 }
 .settings-button { width: 28px; height: 28px; padding: 0; }
+.sidebar-update {
+  max-width: 145px;
+  overflow: hidden;
+  padding: 4px 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-raised));
+  color: var(--text);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-update:hover { border-color: var(--accent); }
 .settings-button:hover, .dialog-close:hover { background: var(--bg-raised); color: var(--text); }
 
 /* -- Main ---------------------------------------------------------------- */
@@ -1180,7 +1193,7 @@ button { cursor: pointer; }
 
 @media (max-width: 720px) {
   .sidebar { width: 62px; flex-basis: 62px; }
-  .brand, .conv-title, .sidebar-foot > span, .new-chat { display: none; }
+  .brand, .conv-title, .sidebar-foot > span, .sidebar-update, .new-chat { display: none; }
   .sidebar-foot { display: flex; justify-content: center; padding: 10px 0; }
   .conv-group-head { justify-content: center; padding: 5px 0; }
   .conv-group-name, .conv-group-add { display: none; }
