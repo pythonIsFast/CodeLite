@@ -46,6 +46,7 @@ from ..config import (
 )
 from ..importer import import_codex_sessions, preview_codex_sessions
 from ..settings import schema as behaviour_schema
+from ..updater import UpdateError, check_update, install_update
 from ..permission.modes import Mode
 from ..provider.auth import AuthError
 from ..provider.login import ChatGPTLoginManager
@@ -201,6 +202,22 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
             return jsonify({"error": str(error), "kind": "auth"}), 401
         except Exception as error:  # noqa: BLE001 - surfaced to the UI as-is
             return jsonify({"error": str(error)}), 502
+
+    # -- application updates -------------------------------------------------
+
+    @app.get("/api/update")
+    def update_status():
+        try:
+            return jsonify(check_update())
+        except UpdateError as error:
+            return jsonify({"error": str(error)}), 502
+
+    @app.post("/api/update")
+    def start_update():
+        try:
+            return jsonify(install_update()), 202
+        except UpdateError as error:
+            return jsonify({"error": str(error)}), 409
 
     # -- ChatGPT account ------------------------------------------------------
 

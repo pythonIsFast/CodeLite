@@ -83,6 +83,9 @@ const el = {
   settingsAuthManual: $("settings-auth-manual"),
   settingsAuthOpenLink: $("settings-auth-open-link"),
   settingsAuthCopyLink: $("settings-auth-copy-link"),
+  settingsUpdate: $("settings-update"),
+  updateStatus: $("update-status"),
+  updateButton: $("update-button"),
   globalMemory: $("global-memory"),
   globalMemoryPath: $("global-memory-path"),
   globalMemorySave: $("global-memory-save"),
@@ -137,6 +140,7 @@ const state = {
   appLoaded: false,
   authPoll: null,
   authUrl: null,
+  update: null,
   attachments: [],
   uploadsInProgress: 0,
 };
@@ -211,6 +215,51 @@ async function loadProjectSettings() {
   el.projectSkills.textContent = skills.length
     ? `Skills: ${skills.map((skill) => skill.name).join(", ")}`
     : "Skills: none. Add Markdown skills under .codelite/skills/.";
+}
+
+async function checkForUpdate() {
+  el.updateButton.disabled = true;
+  el.updateStatus.textContent = "Checking for updates…";
+  try {
+    const update = await get("/api/update");
+    state.update = update;
+    el.settingsUpdate.hidden = !update.supported;
+    if (!update.supported) return;
+    if (!update.available) {
+      el.updateStatus.textContent = `Code Lite ${update.current_version} is up to date.`;
+      el.updateButton.textContent = "Check again";
+    } else if (!update.asset_available) {
+      el.updateStatus.textContent = `Version ${update.latest_version} is available, but its installer is missing.`;
+      el.updateButton.textContent = "Check again";
+    } else {
+      el.updateStatus.textContent = `Version ${update.latest_version} is available (installed: ${update.current_version}).`;
+      el.updateButton.textContent = "Install update";
+    }
+  } catch (error) {
+    el.settingsUpdate.hidden = false;
+    el.updateStatus.textContent = error.message;
+    el.updateButton.textContent = "Try again";
+  } finally {
+    el.updateButton.disabled = false;
+  }
+}
+
+async function runUpdate() {
+  if (!state.update?.available || !state.update?.asset_available) {
+    await checkForUpdate();
+    return;
+  }
+  el.updateButton.disabled = true;
+  el.updateStatus.textContent = "Downloading and verifying the update…";
+  try {
+    const result = await post("/api/update");
+    el.updateStatus.textContent = `Installer for ${result.version} started. Follow the system prompt, then restart Code Lite.`;
+    el.updateButton.textContent = "Installer started";
+  } catch (error) {
+    el.updateStatus.textContent = error.message;
+    el.updateButton.textContent = "Try again";
+    el.updateButton.disabled = false;
+  }
 }
 
 async function loadGlobalSettings() {
@@ -2227,6 +2276,7 @@ function wireEvents() {
   el.settingsLogin.addEventListener("click", startAuthLogin);
   el.authCopyLink.addEventListener("click", copyAuthLink);
   el.settingsAuthCopyLink.addEventListener("click", copyAuthLink);
+  el.updateButton.addEventListener("click", runUpdate);
 
   document.addEventListener("dragover", (event) => {
     if (dataTransferHasFiles(event.dataTransfer)) event.preventDefault();
@@ -2260,6 +2310,7 @@ function wireEvents() {
       loadProjectSettings(),
       loadCodexImport(),
       loadBehaviour(),
+      checkForUpdate(),
     ]).catch((error) => toast(error.message, true));
     el.importStatus.textContent = "";
     selectSettingsTab("account");
