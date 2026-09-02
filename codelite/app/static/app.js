@@ -2215,27 +2215,44 @@ function initCustomSelects() {
   });
 }
 
+function dataTransferHasFiles(dataTransfer) {
+  if (!dataTransfer) return false;
+  if (dataTransfer.files?.length) return true;
+  if ([...(dataTransfer.items || [])].some((item) => item.kind === "file")) return true;
+  return [...(dataTransfer.types || [])].includes("Files");
+}
+
 function wireEvents() {
   el.authLogin.addEventListener("click", startAuthLogin);
   el.settingsLogin.addEventListener("click", startAuthLogin);
   el.authCopyLink.addEventListener("click", copyAuthLink);
   el.settingsAuthCopyLink.addEventListener("click", copyAuthLink);
 
+  document.addEventListener("dragover", (event) => {
+    if (dataTransferHasFiles(event.dataTransfer)) event.preventDefault();
+  }, true);
+  document.addEventListener("drop", (event) => {
+    if (!dataTransferHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    if (!el.composer.contains(event.target)) toast("Drop files onto the chat box to attach them.");
+  }, true);
+
   for (const eventName of ["dragenter", "dragover"]) {
     el.composer.addEventListener(eventName, (event) => {
-      if (!event.dataTransfer?.types.includes("Files")) return;
+      if (!dataTransferHasFiles(event.dataTransfer)) return;
       event.preventDefault();
       el.composer.classList.add("dragging-files");
     });
   }
-  for (const eventName of ["dragleave", "drop"]) {
-    el.composer.addEventListener(eventName, (event) => {
-      if (!event.dataTransfer?.types.includes("Files")) return;
-      event.preventDefault();
-      el.composer.classList.remove("dragging-files");
-      if (eventName === "drop") addPastedFiles(clipboardFiles(event.dataTransfer));
-    });
-  }
+  el.composer.addEventListener("dragleave", () => {
+    el.composer.classList.remove("dragging-files");
+  });
+  el.composer.addEventListener("drop", (event) => {
+    if (!dataTransferHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    el.composer.classList.remove("dragging-files");
+    addPastedFiles(clipboardFiles(event.dataTransfer));
+  });
   el.settingsButton.addEventListener("click", async () => {
     await refreshAuth().catch((error) => toast(error.message, true));
     await Promise.all([
