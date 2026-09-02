@@ -162,6 +162,10 @@ const state = {
   remotePassword: "",
   attachments: [],
   uploadsInProgress: 0,
+  busyWatchdog: null,
+  lastStreamEventAt: 0,
+  reconciling: false,
+  pendingMessages: new Set(),
 };
 
 /* -- API ------------------------------------------------------------------ */
@@ -797,16 +801,19 @@ function userTextForDisplay(text) {
     .trim() || "Attached file";
 }
 
-function userMessage(text, attachments = []) {
+function userMessage(text, attachments = [], messageId = "") {
   const message = document.createElement("div");
   message.className = "user-message";
+  if (messageId) message.dataset.messageId = messageId;
   for (const attachment of attachments) {
     if (!String(attachment.type || "").startsWith("image/")) continue;
     const image = document.createElement("img");
     image.className = "user-image-attachment";
     image.src = fileUrl(attachment.path);
     image.alt = attachment.name || attachment.path;
-    image.loading = "lazy";
+    // User uploads are part of the message itself. Loading them eagerly avoids
+    // Edge's lazy-image placeholder leaving a blank gap above fresh messages.
+    image.addEventListener("error", () => image.remove());
     message.appendChild(image);
   }
   message.appendChild(userBubble(userTextForDisplay(text)));
@@ -1201,8 +1208,13 @@ function finishToolRow(group, row, output, ok) {
 function fileUrl(path) {
   const conversation = state.active && state.active.id;
   if (!conversation || !path) return "";
-  const encodedPath = String(path).split("/").map(encodeURIComponent).join("/");
-  return `/api/conversations/${encodeURIComponent(conversation)}/files/${encodedPath}`;
+  const value = String(path);
+  const uploadPrefix = `uploads/${conversation}/`;
+  const route = value.startsWith(uploadPrefix)
+    ? `uploads/${value.slice(uploadPrefix.length)}`
+    : `files/${value}`;
+  const encodedRoute = route.split("/").map(encodeURIComponent).join("/");
+  return `/api/conversations/${encodeURIComponent(conversation)}/${encodedRoute}`;
 }
 
 function showcaseFile(path) {
@@ -1265,7 +1277,11 @@ function renderEntries(entries) {
 
     if (item.role === "user") {
       group = null;
-      el.messages.appendChild(userMessage(textFromContent(item.content), meta.attachments || []));
+      el.messages.appendChild(userMessage(
+        textFromContent(item.content),
+        meta.attachments || [],
+        meta.message_id || ""
+      ));
       continue;
     }
     if (item.type === "message" || item.role === "assistant") {
@@ -1564,6 +1580,39 @@ function setBusy(busy, label = "Working…") {
   el.statusText.textContent = label;
   el.send.disabled = busy || !state.active;
   el.compactContext.disabled = busy || !state.active;
+  if (busy && !state.busyWatchdog) {
+    state.busyWatchdog = setInterval(checkBusyRun, 3000);
+  } else if (!busy && state.busyWatchdog) {
+    clearInterval(state.busyWatchdog);
+    state.busyWatchdog = null;
+  }
+}
+
+async function reconcileRun(conversationId) {
+  if (state.reconciling || state.pendingMessages.size || state.active?.id !== conversationId) return;
+  state.reconciling = true;
+  try {
+    const status = await get(`/api/conversations/${conversationId}/run-status`);
+    if (state.active?.id !== conversationId) return;
+    if (status.busy) return;
+    const data = await get(`/api/conversations/${conversationId}`);
+    if (state.active?.id !== conversationId) return;
+    state.active = data;
+    resetLive();
+    renderEntries(data.entries || []);
+    refreshUsageFromConversation();
+    setBusy(false);
+  } catch {
+    // The EventSource keeps reconnecting; the next watchdog tick can retry.
+  } finally {
+    state.reconciling = false;
+  }
+}
+
+function checkBusyRun() {
+  if (!state.busy || !state.active || state.uploadsInProgress) return;
+  if (Date.now() - state.lastStreamEventAt < 5000) return;
+  reconcileRun(state.active.id);
 }
 
 function resetLive() {
@@ -1702,14 +1751,33 @@ function connectStream(conversationId) {
   const stream = new EventSource(`/api/conversations/${conversationId}/events`);
   state.stream = stream;
 
+  state.lastStreamEventAt = Date.now();
   const on = (name, handler) =>
     stream.addEventListener(name, (event) => {
+      state.lastStreamEventAt = Date.now();
       let data = {};
       try { data = JSON.parse(event.data); } catch { /* keepalive or noise */ }
       handler(data);
     });
 
-  on("ready", (data) => setBusy(Boolean(data.busy)));
+  on("ready", (data) => {
+    if (data.busy) setBusy(true);
+    else if (state.busy) reconcileRun(conversationId);
+    else setBusy(false);
+  });
+  on("user_message", (data) => {
+    const messageId = String(data.message_id || "");
+    const existing = messageId
+      ? [...el.messages.querySelectorAll(".user-message[data-message-id]")]
+        .find((node) => node.dataset.messageId === messageId)
+      : null;
+    if (existing) {
+      existing.classList.remove("pending");
+    } else {
+      el.emptyState.hidden = true;
+      append(userMessage(data.text || "", data.attachments || [], messageId));
+    }
+  });
   on("model_routing", () => setBusy(true, "Choosing the best model…"));
   on("model_selected", (data) => {
     append(modelDecisionCard(data));
@@ -1841,6 +1909,7 @@ function connectStream(conversationId) {
   });
 
   on("done", () => { finalizeLiveText(); setBusy(false); resetLive(); });
+  on("run_finished", () => { finalizeLiveText(); setBusy(false); resetLive(); });
   on("cancelled", () => {
     finalizeLiveText();
     setBusy(false);
@@ -1856,8 +1925,10 @@ function connectStream(conversationId) {
   });
 
   stream.onerror = () => {
-    // EventSource reconnects on its own; only surface a hard failure.
-    if (stream.readyState === EventSource.CLOSED) setBusy(false);
+    // EventSource reconnects on its own. If a tunnel dropped the final frame,
+    // reconcile against persisted state instead of leaving “Working…” forever.
+    state.lastStreamEventAt = 0;
+    if (state.busy) reconcileRun(conversationId);
   };
 }
 
@@ -2042,7 +2113,7 @@ function renderAttachments() {
       const image = document.createElement("img");
       image.src = fileUrl(attachment.path);
       image.alt = attachment.name;
-      image.loading = "lazy";
+      image.addEventListener("error", () => image.remove());
       remove.className = "attachment-preview-remove";
       preview.append(image, remove);
       el.attachments.appendChild(preview);
@@ -2164,19 +2235,32 @@ async function sendMessage() {
     : "";
   const message = [attachmentNote, text].filter(Boolean).join("\n\n") || "Please inspect the attached file.";
 
+  const messageId = globalThis.crypto?.randomUUID?.() ||
+    `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   el.prompt.value = "";
   el.prompt.style.height = "auto";
   el.emptyState.hidden = true;
-  append(userMessage(text, attachments));
+  const optimistic = append(userMessage(text, attachments, messageId));
+  optimistic.classList.add("pending");
+  scrollDown(true);
   resetLive();
   setBusy(true);
+  state.pendingMessages.add(messageId);
 
   try {
-    await post(`/api/conversations/${state.active.id}/messages`, { text: message, attachments });
+    await post(`/api/conversations/${state.active.id}/messages`, {
+      text: message,
+      attachments,
+      message_id: messageId,
+    });
+    optimistic.classList.remove("pending");
     clearAttachments();
   } catch (error) {
+    optimistic.classList.remove("pending");
     append(errorBubble(error.message));
     setBusy(false);
+  } finally {
+    state.pendingMessages.delete(messageId);
   }
 }
 

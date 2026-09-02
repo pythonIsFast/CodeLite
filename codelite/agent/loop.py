@@ -117,13 +117,41 @@ class AgentRunner:
 
     # -- entry point ---------------------------------------------------------
 
-    def run(self, user_text: str, attachments: list[dict[str, str]] | None = None) -> None:
+    def run(
+        self,
+        user_text: str,
+        attachments: list[dict[str, str]] | None = None,
+        message_id: str | None = None,
+    ) -> None:
         self._run_tokens_used = 0
         self._run_model = self._conversation.model
         # Whatever the user picked holds for the whole run. Auto may replace it
         # below, because choosing the model without choosing how hard it thinks
         # only decides half the question.
         self._run_effort = self._conversation.reasoning_effort
+        conversation_id = self._conversation.id
+        user_item = {
+            "role": "user",
+            "content": [{"type": "input_text", "text": user_text}],
+        }
+
+        # Persist and announce the message before model routing or project
+        # discovery, so every connected UI can paint the user's turn at once.
+        history = self._repair_history(self._store.load_items(conversation_id))
+        items = self._effective_history(history)
+        items.append(user_item)
+        user_meta: dict[str, Any] = {}
+        if attachments:
+            user_meta["attachments"] = attachments
+        if message_id:
+            user_meta["message_id"] = message_id
+        self._store.append_items(conversation_id, [user_item], user_meta or None)
+        self._publish(
+            "user_message",
+            {"text": user_text, "attachments": attachments or [], "message_id": message_id},
+        )
+        self._maybe_set_title(user_text)
+
         if self._run_model == AUTO_MODEL:
             self._publish("model_routing", {"router": "Auto"})
             decision, response = select_model(
@@ -150,24 +178,6 @@ class AgentRunner:
         self._local_extensions = LocalExtensionHost(
             Path(self._conversation.workspace), set(registry.names())
         )
-        conversation_id = self._conversation.id
-        user_item = {
-            "role": "user",
-            "content": [{"type": "input_text", "text": user_text}],
-        }
-
-        # Repair before appending the new message, so the placeholder outputs
-        # land next to the calls they answer instead of behind the user's turn.
-        history = self._repair_history(self._store.load_items(conversation_id))
-        items = self._effective_history(history)
-        items.append(user_item)
-        self._store.append_items(
-            conversation_id,
-            [user_item],
-            {"attachments": attachments} if attachments else None,
-        )
-        self._maybe_set_title(user_text)
-
         context = ToolContext(
             workspace=Path(self._conversation.workspace),
             permissions=self._permissions,

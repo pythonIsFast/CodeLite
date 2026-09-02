@@ -422,6 +422,18 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
             return jsonify({"error": "File not found."}), 404
         return send_file(candidate, as_attachment=False, conditional=True)
 
+    @app.get("/api/conversations/<conversation_id>/uploads/<path:filename>")
+    def uploaded_file(conversation_id: str, filename: str):
+        """Serve a central upload without routing its storage prefix as a workspace path."""
+        _conversation, error = _conversation_or_404(conversation_id)
+        if error:
+            return error
+        root = _upload_dir(conversation_id)
+        candidate = (root / filename).resolve()
+        if root not in candidate.parents or not candidate.is_file():
+            return jsonify({"error": "File not found."}), 404
+        return send_file(candidate, as_attachment=False, conditional=True)
+
     @app.patch("/api/conversations/<conversation_id>")
     def update_conversation(conversation_id: str):
         conversation, error = _conversation_or_404(conversation_id)
@@ -623,6 +635,13 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
 
     # -- runs ----------------------------------------------------------------------
 
+    @app.get("/api/conversations/<conversation_id>/run-status")
+    def run_status(conversation_id: str):
+        conversation, error = _conversation_or_404(conversation_id)
+        if error:
+            return error
+        return jsonify({"busy": rt().is_busy(conversation)})
+
     @app.post("/api/conversations/<conversation_id>/messages")
     def send_message(conversation_id: str):
         conversation, error = _conversation_or_404(conversation_id)
@@ -658,11 +677,17 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
             )
             if candidate != (workspace / supplied_path).resolve():
                 text = text.replace(supplied_path, str(candidate))
+        supplied_message_id = body.get("message_id")
+        message_id = (
+            supplied_message_id[:128]
+            if isinstance(supplied_message_id, str) and supplied_message_id
+            else uuid.uuid4().hex
+        )
         try:
-            rt().start_run(conversation, text, attachments)
+            rt().start_run(conversation, text, attachments, message_id)
         except RunInProgress as busy:
             return jsonify({"error": str(busy)}), 409
-        return jsonify({"started": True}), 202
+        return jsonify({"started": True, "message_id": message_id}), 202
 
     @app.post("/api/conversations/<conversation_id>/cancel")
     def cancel_run(conversation_id: str):

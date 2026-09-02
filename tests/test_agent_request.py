@@ -51,7 +51,12 @@ class FakeSession:
         return 272_000
 
 
-def _runner(tmp_path: Path, session: FakeSession, **conversation: Any) -> AgentRunner:
+def _runner(
+    tmp_path: Path,
+    session: FakeSession,
+    publish: Any = None,
+    **conversation: Any,
+) -> AgentRunner:
     store = Store(tmp_path / "db.sqlite")
     created = store.create_conversation(
         workspace=str(tmp_path),
@@ -64,7 +69,7 @@ def _runner(tmp_path: Path, session: FakeSession, **conversation: Any) -> AgentR
         store=store,
         conversation=created,
         permissions=PermissionManager(Mode.ASK, lambda *_: None),
-        publish=lambda *_: None,
+        publish=publish or (lambda *_: None),
         config=AppConfig(data_dir=tmp_path),
     )
 
@@ -77,6 +82,20 @@ def test_no_reasoning_or_tier_is_sent_by_default(tmp_path: Path) -> None:
     # Absent, not empty: the transport then fills in the model's own default.
     assert "reasoning" not in body
     assert "service_tier" not in body
+
+
+def test_user_message_is_published_with_its_client_id(tmp_path: Path) -> None:
+    events: list[tuple[str, dict[str, Any]]] = []
+    runner = _runner(tmp_path, FakeSession(), lambda event, data: events.append((event, data)))
+
+    runner.run("hello", message_id="browser-message-1")
+
+    assert events[0] == (
+        "user_message",
+        {"text": "hello", "attachments": [], "message_id": "browser-message-1"},
+    )
+    entry = runner._store.load_entries(runner._conversation.id)[0]
+    assert entry["meta"]["message_id"] == "browser-message-1"
 
 
 def test_chosen_effort_is_sent(tmp_path: Path) -> None:

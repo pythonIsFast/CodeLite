@@ -32,8 +32,13 @@ class UploadTests(unittest.TestCase):
             self.assertEqual(stored.read_bytes(), b"upload content")
             self.assertFalse((workspace / "uploads").exists())
             served = client.get(f"/api/conversations/{conversation_id}/files/{upload['path']}")
+            direct = client.get(
+                f"/api/conversations/{conversation_id}/uploads/{Path(upload['path']).name}"
+            )
             self.assertEqual(served.status_code, 200)
             self.assertEqual(served.data, b"upload content")
+            self.assertEqual(direct.status_code, 200)
+            self.assertEqual(direct.data, b"upload content")
 
 
 if __name__ == "__main__":

@@ -238,6 +238,7 @@ class Runtime:
         conversation: Conversation,
         user_text: str,
         attachments: list[dict[str, str]] | None = None,
+        message_id: str | None = None,
     ) -> None:
         state = self._state_for(conversation)
         with state.lock:
@@ -258,7 +259,7 @@ class Runtime:
             state.runner = runner
             thread = threading.Thread(
                 target=self._run_and_report,
-                args=(runner, user_text, attachments, conversation.id),
+                args=(runner, user_text, attachments, message_id, conversation.id),
                 name=f"codelite-run-{conversation.id[:8]}",
                 daemon=True,
             )
@@ -297,13 +298,18 @@ class Runtime:
         runner: AgentRunner,
         user_text: str,
         attachments: list[dict[str, str]] | None,
+        message_id: str | None,
         cid: str,
     ) -> None:
         """Run a turn, then publish the plan usage the request just revealed."""
         try:
-            runner.run(user_text, attachments)
+            runner.run(user_text, attachments, message_id)
+        except Exception as error:  # noqa: BLE001 - background failures must reach every UI
+            logger.exception("Agent run failed before its streaming loop started")
+            self.publish(cid, "error", {"message": str(error)})
         finally:
             self.refresh_plan_usage(publish_to=cid)
+            self.publish(cid, "run_finished", {})
 
     def _compact_and_report(self, runner: AgentRunner, cid: str) -> None:
         try:
