@@ -262,7 +262,17 @@ class CodexTransport:
             for item in input_items
         )
         if tools and not has_additional_tools:
-            prefix.append({"type": "additional_tools", "role": "developer", "tools": tools})
+            # Codex Responses Lite injects acknowledgements while sampling and
+            # rejects OpenAI's `async` function-tool flag. Keep the normal
+            # Responses shape for Astra, but remove only this incompatible
+            # transport hint when the catalog selected Lite.
+            lite_tools = []
+            for tool in tools:
+                if isinstance(tool, dict):
+                    lite_tools.append({key: value for key, value in tool.items() if key != "async"})
+                else:
+                    lite_tools.append(tool)
+            prefix.append({"type": "additional_tools", "role": "developer", "tools": lite_tools})
 
         if isinstance(normalized.get("instructions"), str) and normalized["instructions"]:
             prefix.append(
