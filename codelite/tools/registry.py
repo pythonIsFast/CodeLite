@@ -60,6 +60,12 @@ TOOLS: tuple[Tool, ...] = (
 
 _BY_NAME: dict[str, Tool] = {tool.name: tool for tool in TOOLS}
 
+# These tools only read bounded data and can safely be returned later by Astra
+# without authorizing a write or shell action out of band.
+ASYNC_SAFE_TOOL_NAMES = frozenset({
+    "read_file", "list_dir", "grep", "find_files", "code_intelligence", "web_search", "web_fetch"
+})
+
 
 def get(name: str) -> Tool | None:
     return _BY_NAME.get(name)
@@ -69,6 +75,9 @@ def names() -> list[str]:
     return [tool.name for tool in TOOLS]
 
 
-def to_responses_tools() -> list[dict[str, Any]]:
+def to_responses_tools(*, asynchronous: bool = False) -> list[dict[str, Any]]:
     """Render every tool as a Responses-API tool definition."""
-    return [tool.to_responses_tool() for tool in TOOLS]
+    return [
+        tool.to_responses_tool(asynchronous=asynchronous and tool.name in ASYNC_SAFE_TOOL_NAMES)
+        for tool in TOOLS
+    ]

@@ -17,7 +17,7 @@ from ..provider.session import Session
 AUTO_MODEL = "auto"
 ROUTER_MODEL = "gpt-5.6-luna"
 FALLBACK_MODEL = "gpt-5.6-terra"
-ROUTABLE_MODELS = {"gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"}
+ROUTABLE_MODELS = {"gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-astra"}
 
 MODEL_PROFILES = {
     "gpt-5.6-luna": {
@@ -35,6 +35,11 @@ MODEL_PROFILES = {
         "fit": "Best for complex architecture, high-risk changes, and hard investigation.",
         "limit": "Avoid for routine work when Luna or Terra is sufficient.",
     },
+    "gpt-6-astra": {
+        "name": "Astra",
+        "fit": "Best for the hardest long-running, multimodal, and agentic work.",
+        "limit": "Use only when its larger context and highest capability justify the cost.",
+    },
 }
 
 ROUTER_INSTRUCTIONS = """\
@@ -46,18 +51,21 @@ simple bounded tasks. Choose gpt-5.6-terra for typical multi-file changes,
 ordinary debugging, refactors, or work that needs stronger coordination.
 Choose gpt-5.6-sol only for genuinely complex architecture, high-risk/security
 or data-sensitive changes, large cross-cutting refactors, or hard investigation
-where failure would be costly. Do not choose Sol merely because the task is a
-coding task. Prefer Luna whenever its limits clearly do not apply.
+where failure would be costly. Choose gpt-6-astra only for the hardest tasks
+that benefit from its 922k input budget, image understanding, or sustained
+agentic work across many tools. Do not choose Astra or Sol merely because the
+task is a coding task. Prefer Luna whenever its limits clearly do not apply.
 
 Also choose how hard the chosen model should think. Use "low" for lookups,
 small edits, and anything mechanical; "medium" for ordinary multi-step work;
-"high" only when the task needs sustained reasoning, such as a subtle bug, a
-design decision with trade-offs, or a change whose failure is expensive.
-Effort costs time and tokens on every turn of the run, so do not raise it
+"high" for sustained reasoning, such as a subtle bug, a design decision with
+trade-offs, or a change whose failure is expensive. Use "xhigh" or "max" only
+for Astra when an unusually difficult or long-running task demonstrably needs
+it. Effort costs time and tokens on every turn of the run, so do not raise it
 because the task sounds important -- raise it only when thinking harder is
 what the task actually needs.
 
-Return JSON only: {"model":"%(models)s", "effort":"low|medium|high", "reason":"one concise sentence for the user"}.\
+Return JSON only: {"model":"%(models)s", "effort":"low|medium|high|xhigh|max", "reason":"one concise sentence for the user"}.\
 """
 
 

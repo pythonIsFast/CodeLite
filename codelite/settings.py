@@ -91,7 +91,7 @@ SETTINGS: tuple[Setting, ...] = (
         key="agent_model",
         label="Default model",
         kind="model",
-        default="gpt-5.6-sol",
+        default="gpt-6-astra",
         group="agent",
         help="The model a new conversation starts with. Existing chats keep theirs.",
     ),
@@ -133,7 +133,7 @@ SETTINGS: tuple[Setting, ...] = (
         key="auto_models",
         label="Models Auto may choose",
         kind="models",
-        default=("gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"),
+        default=("gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-astra"),
         group="auto",
         help="Removing the largest model here is the simplest way to cap what a "
         "run can cost.",

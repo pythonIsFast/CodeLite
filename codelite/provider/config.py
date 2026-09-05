@@ -52,6 +52,10 @@ MAX_REFERENCE_IMAGE_BYTES = 50 * 1024 * 1024
 
 DEFAULT_CHAT_MODEL = "gpt-5.2"
 
+# Astra's priority tier is unavailable with EU data residency. The optional
+# setting is intentionally explicit because ChatGPT OAuth does not expose it.
+DATA_RESIDENCY_ENV = "OPENAI_DATA_RESIDENCY"
+
 # -- Local proxy server ---------------------------------------------------------
 
 DEFAULT_SERVER_HOST = "127.0.0.1"
@@ -91,8 +95,14 @@ class ProviderConfig:
     codex_client_version: str | None = None
     chat_model: str = DEFAULT_CHAT_MODEL
     image_model: str = DEFAULT_IMAGE_MODEL
+    data_residency: str = field(default_factory=lambda: os.environ.get(DATA_RESIDENCY_ENV, ""))
     instructions: str = ""
     ensure_fresh_tokens: bool = True
 
     def __post_init__(self) -> None:
         self.auth_file_path = Path(self.auth_file_path)
+        self.data_residency = self.data_residency.strip().lower()
+
+    @property
+    def is_eu_data_residency(self) -> bool:
+        return self.data_residency in {"eu", "europe", "eu-data-residency"}

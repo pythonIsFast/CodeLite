@@ -44,14 +44,17 @@ class Tool:
     parameters: dict[str, Any]
     run: Callable[[dict[str, Any], ToolContext], str]
 
-    def to_responses_tool(self) -> dict[str, Any]:
+    def to_responses_tool(self, *, asynchronous: bool = False) -> dict[str, Any]:
         """Render as a Responses-API tool definition."""
-        return {
+        definition: dict[str, Any] = {
             "type": "function",
             "name": self.name,
             "description": self.description,
             "parameters": self.parameters,
         }
+        if asynchronous:
+            definition["async"] = True
+        return definition
 
 
 def object_schema(

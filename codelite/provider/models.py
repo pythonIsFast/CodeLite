@@ -104,9 +104,9 @@ class CodexModelInfo:
     default_verbosity: str | None = None
     default_reasoning_level: str | None = None
     #: Effective *input* budget in tokens -- the figure to measure usage
-    #: against. Codex reports 272000 for every model today, which is the 400000
-    #: total minus 128000 held back for output. The official CLI compacts at
-    #: 0.95 of it (~258400), which is why this app stops there too.
+    #: against. It is model-specific: GPT-5.6 reports 272000, while Astra's
+    #: 1.05M total context reserves 128k output tokens and leaves 922000 input.
+    #: The app compacts before the configured fraction of that budget.
     context_window: int | None = None
     #: What the underlying model could take. Capability, not policy: requests
     #: are held to `context_window` regardless, so this must not be used as

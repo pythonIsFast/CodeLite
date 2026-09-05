@@ -29,7 +29,7 @@ from pathlib import Path
 
 from .permission.modes import Mode
 
-DEFAULT_AGENT_MODEL = "gpt-5.6-sol"
+DEFAULT_AGENT_MODEL = "gpt-6-astra"
 DEFAULT_JUDGE_MODEL = "gpt-5.6-luna"
 
 DEFAULT_HOST = "127.0.0.1"
@@ -57,6 +57,9 @@ CONTEXT_STOP_FRACTION = 0.95
 # unreachable. Unlisted models fall back to DEFAULT_CONTEXT_WINDOW.
 DEFAULT_CONTEXT_WINDOW = 272_000
 CONTEXT_WINDOWS: dict[str, int] = {
+    # Astra accepts 1.05M total tokens; 128k are reserved for output, leaving
+    # the 922k effective input budget used by Code Lite's compaction meter.
+    "gpt-6-astra": 922_000,
     "gpt-5.6-sol": 272_000,
     "gpt-5.6-terra": 272_000,
     "gpt-5.6-luna": 272_000,
@@ -146,7 +149,9 @@ class AppConfig:
     #: Which models the Auto picker may route to, and how it recovers.
     auto_router_model: str = DEFAULT_JUDGE_MODEL
     auto_fallback_model: str = "gpt-5.6-terra"
-    auto_models: tuple[str, ...] = ("gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol")
+    auto_models: tuple[str, ...] = (
+        "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-astra"
+    )
     #: How long to wait on a language server or MCP server, per request.
     lsp_timeout_seconds: float = 15.0
     lsp_diagnostic_wait_seconds: float = 1.0

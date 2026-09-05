@@ -266,6 +266,20 @@ class Runtime:
             state.thread = thread
             thread.start()
 
+    def steer_run(
+        self, conversation: Conversation, text: str, message_id: str | None = None
+    ) -> bool:
+        """Pass a follow-up to an active runner without starting a second run."""
+        state = self._state_for(conversation)
+        runner = state.runner
+        return bool(runner and state.busy and runner.steer(text, message_id))
+
+    def update_run_reasoning(self, conversation: Conversation, effort: str) -> bool:
+        """Queue an Astra configuration update for an active run."""
+        state = self._state_for(conversation)
+        runner = state.runner
+        return bool(runner and state.busy and runner.update_reasoning(effort))
+
     def start_compaction(self, conversation: Conversation) -> None:
         """Compact one conversation in the background like a normal run."""
         state = self._state_for(conversation)

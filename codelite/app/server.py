@@ -452,6 +452,8 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         }
         if "reasoning_effort" in body:
             fields["reasoning_effort"] = normalize_effort(body.get("reasoning_effort"))
+            if conversation.model == "gpt-6-astra" and runtime.is_busy(conversation):
+                runtime.update_run_reasoning(conversation, fields["reasoning_effort"])
         if "fast_mode" in body:
             fields["fast_mode"] = 1 if body.get("fast_mode") else 0
         if fields:
@@ -689,6 +691,11 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         try:
             rt().start_run(conversation, text, attachments, message_id)
         except RunInProgress as busy:
+            # Astra receives a correction at the next safe model boundary. A
+            # follow-up with uploads still needs a fresh turn because its file
+            # permissions belong to that turn's ToolContext.
+            if not attachments and rt().steer_run(conversation, text, message_id):
+                return jsonify({"started": True, "steered": True, "message_id": message_id}), 202
             return jsonify({"error": str(busy)}), 409
         return jsonify({"started": True, "message_id": message_id}), 202
 

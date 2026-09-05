@@ -85,10 +85,15 @@ class Session:
         info = self._transport.resolve_model_info(model)
         if info is None:
             return {"efforts": [], "default_effort": "", "fast": False}
+        eu_astra = model == "gpt-6-astra" and self.config.is_eu_data_residency
         return {
             "efforts": list(info.supported_reasoning_levels),
             "default_effort": info.default_reasoning_level or "",
-            "fast": info.supports_fast,
+            "fast": info.supports_fast and not eu_astra,
+            "fast_unavailable_reason": (
+                "Fast mode is unavailable for GPT-6 Astra with EU data residency."
+                if eu_astra else ""
+            ),
         }
 
     def context_window(self, model: str) -> int | None:

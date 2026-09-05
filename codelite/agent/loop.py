@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import queue
 import threading
 from pathlib import Path
 from typing import Any, Callable, Iterator
@@ -48,6 +49,8 @@ from . import system_prompt
 from .router import AUTO_MODEL, FALLBACK_MODEL, select_model
 
 logger = logging.getLogger(__name__)
+
+ASTRA_REASONING_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 
 Publisher = Callable[[str, dict[str, Any]], None]
 
@@ -82,6 +85,11 @@ class AgentRunner:
         self._publish = publish
         self._config = config
         self._cancelled = threading.Event()
+        # HTTP/SSE remains the compatible fallback transport. Astra steering is
+        # queued thread-safely and applied at the next safe model boundary when
+        # an OpenAI Responses WebSocket is not available to this OAuth backend.
+        self._steers: queue.SimpleQueue[tuple[str, str | None]] = queue.SimpleQueue()
+        self._configuration_updates: queue.SimpleQueue[str] = queue.SimpleQueue()
         self._run_tokens_used = 0
         self._run_model = (
             FALLBACK_MODEL if self._conversation.model == AUTO_MODEL else self._conversation.model
@@ -98,6 +106,34 @@ class AgentRunner:
         self._permissions.cancel_pending()
         if self._questions is not None:
             self._questions.cancel_pending()
+
+    def steer(self, text: str, message_id: str | None = None) -> bool:
+        """Queue a user correction without interrupting already-started tools."""
+        if self.cancelled or not text.strip():
+            return False
+        if self._run_model != "gpt-6-astra" and self._conversation.model != AUTO_MODEL:
+            return False
+        self._steers.put((text.strip(), message_id))
+        self._publish("steer_queued", {"message_id": message_id})
+        return True
+
+    def update_reasoning(self, effort: str) -> bool:
+        """Apply an Astra reasoning update at the next model boundary."""
+        if self.cancelled or not effort or self._run_model != "gpt-6-astra":
+            return False
+        try:
+            allowed = self._session.model_capabilities(self._run_model).get("efforts")
+        except Exception:  # noqa: BLE001 - preserve the chosen value when offline
+            allowed = ()
+        allowed = allowed or (
+            ASTRA_REASONING_EFFORTS if self._run_model == "gpt-6-astra" else ()
+        )
+        normalized = normalize_effort(effort, allowed)
+        if effort and not normalized:
+            return False
+        self._configuration_updates.put(normalized)
+        self._publish("configuration_queued", {"effort": normalized})
+        return True
 
     def compact(self) -> None:
         """Manually compact this conversation without adding a chat message."""
@@ -202,6 +238,36 @@ class AgentRunner:
             logger.exception("Agent run failed")
             self._publish("error", {"message": str(error)})
 
+    def _apply_pending_updates(self, items: list[dict[str, Any]]) -> bool:
+        """Persist queued Astra updates before the next request is created."""
+        changed = False
+        while True:
+            try:
+                effort = self._configuration_updates.get_nowait()
+            except queue.Empty:
+                break
+            self._run_effort = effort
+            changed = True
+            if self._run_model == "gpt-6-astra":
+                update = {"type": "configuration_update", "reasoning": {"effort": effort}}
+                items.append(update)
+                self._store.append_items(self._conversation.id, [update])
+            self._publish("configuration_applied", {"effort": effort})
+
+        while True:
+            try:
+                text, message_id = self._steers.get_nowait()
+            except queue.Empty:
+                break
+            item = {"role": "user", "content": [{"type": "input_text", "text": text}]}
+            changed = True
+            items.append(item)
+            meta = {"message_id": message_id} if message_id else None
+            self._store.append_items(self._conversation.id, [item], meta)
+            self._publish("user_message", {"text": text, "attachments": [], "message_id": message_id})
+            self._publish("steer_applied", {"message_id": message_id})
+        return changed
+
     def _loop(self, items: list[dict[str, Any]], context: ToolContext) -> None:
         """Run turns until the model stops calling tools.
 
@@ -231,6 +297,7 @@ class AgentRunner:
                 self._publish("error", {"message": exhausted})
                 return
 
+            self._apply_pending_updates(items)
             self._publish("step", {"step": step})
             response = self._request_turn(items)
             if response is None:
@@ -254,6 +321,10 @@ class AgentRunner:
 
             calls = [i for i in output_items if i.get("type") == "function_call"]
             if not calls:
+                # A steering request that arrived while the model was generating
+                # starts its continuation instead of ending the run here.
+                if self._apply_pending_updates(items):
+                    continue
                 self._publish(
                     "done",
                     {
@@ -503,6 +574,8 @@ class AgentRunner:
         except Exception:  # noqa: BLE001 - a catalog hiccup must not fail a run
             return effort
         if not allowed:
+            allowed = ASTRA_REASONING_EFFORTS if self._run_model == "gpt-6-astra" else ()
+        if not allowed:
             return effort
         clamped = normalize_effort(effort, allowed)
         if not clamped:
@@ -511,6 +584,8 @@ class AgentRunner:
 
     def _model_supports_fast(self) -> bool:
         """Whether the run's model offers the Fast tier, per Codex's catalog."""
+        if self._run_model == "gpt-6-astra" and self._session.config.is_eu_data_residency:
+            return False
         try:
             return bool(self._session.model_capabilities(self._run_model).get("fast"))
         except Exception:  # noqa: BLE001 - a catalog hiccup must not fail a run
@@ -527,7 +602,7 @@ class AgentRunner:
             ),
             "input": items,
             "tools": [
-                *registry.to_responses_tools(),
+                *registry.to_responses_tools(asynchronous=self._run_model == "gpt-6-astra"),
                 *(tool.to_responses_tool() for tool in self._local_extensions.tools()),
             ],
         }

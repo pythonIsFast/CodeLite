@@ -858,8 +858,7 @@ function modelDecisionCard(data) {
   const profiles = data.profiles || {};
   const list = document.createElement("div");
   list.className = "model-decision-profiles";
-  for (const model of ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]) {
-    const profile = profiles[model];
+  for (const [model, profile] of Object.entries(profiles)) {
     if (!profile) continue;
     const row = document.createElement("p");
     row.className = model === data.model ? "selected" : "";
@@ -1578,7 +1577,8 @@ function setBusy(busy, label = "Working…") {
   state.busy = busy;
   el.statusBar.hidden = !busy;
   el.statusText.textContent = label;
-  el.send.disabled = busy || !state.active;
+  const canSteer = busy && state.active?.model === "gpt-6-astra";
+  el.send.disabled = !state.active || (busy && !canSteer);
   el.compactContext.disabled = busy || !state.active;
   if (busy && !state.busyWatchdog) {
     state.busyWatchdog = setInterval(checkBusyRun, 3000);
@@ -1778,6 +1778,10 @@ function connectStream(conversationId) {
       append(userMessage(data.text || "", data.attachments || [], messageId));
     }
   });
+  on("steer_queued", () => setBusy(true, "Update queued for Astra…"));
+  on("steer_applied", () => setBusy(true, "Astra is applying your update…"));
+  on("configuration_queued", () => setBusy(true, "Reasoning update queued…"));
+  on("configuration_applied", () => setBusy(true, "Reasoning updated for Astra…"));
   on("model_routing", () => setBusy(true, "Choosing the best model…"));
   on("model_selected", (data) => {
     append(modelDecisionCard(data));
@@ -2222,7 +2226,13 @@ async function addPastedFiles(files) {
 
 async function sendMessage() {
   const text = el.prompt.value.trim();
-  if ((!text && !state.attachments.length) || !state.active || state.busy) return;
+  if ((!text && !state.attachments.length) || !state.active) return;
+  const steering = state.busy;
+  if (steering && state.active.model !== "gpt-6-astra") return;
+  if (steering && state.attachments.length) {
+    toast("Send attachment follow-ups after the current Astra run finishes.");
+    return;
+  }
   if (state.uploadsInProgress) {
     toast("Wait for the attachment upload to finish.");
     return;
@@ -2258,7 +2268,7 @@ async function sendMessage() {
   } catch (error) {
     optimistic.classList.remove("pending");
     append(errorBubble(error.message));
-    setBusy(false);
+    if (!steering) setBusy(false);
   } finally {
     state.pendingMessages.delete(messageId);
   }
@@ -2339,6 +2349,8 @@ function fillEffortSelect(select, selected = "", model = "") {
  */
 function renderFastToggle(requested, model) {
   el.fastToggle.hidden = !supportsFast(model);
+  const capability = state.capabilities[model];
+  el.fastToggle.title = capability?.fast_unavailable_reason || "";
   el.fastToggle.setAttribute("aria-pressed", String(Boolean(requested)));
 }
 
