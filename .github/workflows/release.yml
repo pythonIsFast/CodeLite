@@ -202,8 +202,15 @@ jobs:
           # --windowed: this is a GUI app, so no console window flashes up.
           # The asset folders are added under their package path because
           # server.py resolves them relative to the bundle root.
-          # --collect-all webview pulls in the WebView2/WinForms backend and
-          # its pythonnet glue, which PyInstaller does not find on its own.
+          # --collect-all webview pulls in the WebView2/WinForms backend.
+          # clr_loader and pythonnet are its .NET/CLR hosting glue, and
+          # PyInstaller does not find either on its own: pythonnet especially
+          # ships loader config/data files that clr_loader needs at runtime
+          # to resolve Python.Runtime.dll, and a --onefile build without them
+          # fails with an unhandled CLR exception on start (nothing a Python
+          # try/except can catch, since it happens inside the hosted CLR) --
+          # this is a long-documented PyInstaller+pythonnet packaging gap,
+          # see https://github.com/r0x0r/pywebview/issues/1215.
           pyinstaller --noconfirm --onefile --windowed `
             --name CodeLite `
             --icon assets/icon.ico `
@@ -211,6 +218,7 @@ jobs:
             --add-data "codelite/app/static;codelite/app/static" `
             --collect-all webview `
             --collect-all clr_loader `
+            --collect-all pythonnet `
             run.py
 
       - name: Smoke-test the executable
