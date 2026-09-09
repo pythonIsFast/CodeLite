@@ -236,7 +236,12 @@ class JsApi:
 def run(config: AppConfig | None = None, headless: bool = False) -> None:
     """Serve the app, and (unless ``headless``) open the native window."""
     config = config or AppConfig()
-    serve_in_background(config)
+    try:
+        serve_in_background(config)
+    except Exception as error:  # noqa: BLE001 - anything from Flask/create_app startup, not just the port-wait timeout
+        logger.error("The Code Lite server could not start", exc_info=True)
+        show_startup_error(str(error))
+        return
 
     if headless:
         logger.info("Code Lite is serving on %s (no window requested)", config.base_url)
@@ -268,21 +273,20 @@ def run(config: AppConfig | None = None, headless: bool = False) -> None:
         except Exception:  # noqa: BLE001 - GTK integration is platform dependent
             logger.debug("Could not set the Linux application identity", exc_info=True)
 
-    webview.create_window(
-        WINDOW_TITLE,
-        config.base_url,
-        width=WINDOW_WIDTH,
-        height=WINDOW_HEIGHT,
-        min_size=(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT),
-        js_api=JsApi(),
-    )
-    icon_candidates = (
-        Path(__file__).with_name("static") / "icon.png",
-        Path("/usr/share/icons/hicolor/256x256/apps/code-lite.png"),
-    )
-    icon = next((str(path) for path in icon_candidates if path.is_file()), None)
-
     try:
+        webview.create_window(
+            WINDOW_TITLE,
+            config.base_url,
+            width=WINDOW_WIDTH,
+            height=WINDOW_HEIGHT,
+            min_size=(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT),
+            js_api=JsApi(),
+        )
+        icon_candidates = (
+            Path(__file__).with_name("static") / "icon.png",
+            Path("/usr/share/icons/hicolor/256x256/apps/code-lite.png"),
+        )
+        icon = next((str(path) for path in icon_candidates if path.is_file()), None)
         webview.start(icon=icon)
     except Exception as error:  # noqa: BLE001 - the native webview backend can fail in many ways
         # On Windows this is almost always a missing/broken WebView2 Runtime.
@@ -317,7 +321,15 @@ def show_startup_error(message: str) -> None:
     looks like the app "does nothing" on double-click. On Windows, fall
     back to a native message box so the failure is actually seen.
     """
-    print(f"error: {message}", file=sys.stderr)
+    # A --windowed PyInstaller build sets sys.stderr to None (no console to
+    # attach to), so printing to it would itself raise AttributeError and
+    # skip the message box entirely -- silently, since that happens inside
+    # what is usually already an exception handler.
+    if sys.stderr is not None:
+        try:
+            print(f"error: {message}", file=sys.stderr)
+        except Exception:  # noqa: BLE001 - never let logging the error hide the error
+            pass
     if os.name == "nt":
         try:
             import ctypes  # noqa: PLC0415 - Windows-only fallback
