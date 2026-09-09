@@ -248,6 +248,23 @@ def run(config: AppConfig | None = None, headless: bool = False) -> None:
         _block_forever()
         return
 
+    if os.name == "nt" and not _windows_webview2_present():
+        # pywebview's Windows backend hosts the .NET CLR in-process via
+        # pythonnet/clr_loader to drive WebView2. Without the runtime
+        # installed, initializing it raises an *unhandled CLR exception*
+        # (ExceptionCode 0xE0434352 in Event Viewer) that terminates the
+        # whole process below the level any Python try/except can reach --
+        # no traceback, no dialog, just gone. Catching that is not possible,
+        # so the only real fix is to never attempt it and say so instead.
+        show_startup_error(
+            "Code Lite needs the Microsoft Edge WebView2 Runtime to open its "
+            "window, and it is not installed on this PC.\n\n"
+            "Install it from:\n"
+            "https://developer.microsoft.com/microsoft-edge/webview2/\n"
+            "(the \"Evergreen Bootstrapper\" download), then start Code Lite again."
+        )
+        return
+
     try:
         import webview  # noqa: PLC0415 - optional at import time on purpose
     except ImportError:
@@ -303,6 +320,35 @@ def run(config: AppConfig | None = None, headless: bool = False) -> None:
             else ""
         )
         show_startup_error(f"The Code Lite window could not start: {error}{hint}")
+
+
+def _windows_webview2_present() -> bool:
+    """Check the registry for the Edge WebView2 Runtime, Windows only.
+
+    Mirrors the check Microsoft's own bootstrapper docs describe: the
+    Evergreen runtime registers its version under this client GUID, either
+    machine-wide or per-user, in the 32-bit registry view (it is itself a
+    32-bit component). Missing key/value or any registry access error is
+    treated as "not present" -- the safe assumption, since proceeding
+    without it is what causes the unrecoverable CLR crash this guards
+    against.
+    """
+    import winreg  # noqa: PLC0415 - stdlib, Windows only
+
+    client_id = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+    for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        for subkey in (
+            rf"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{client_id}",
+            rf"SOFTWARE\Microsoft\EdgeUpdate\Clients\{client_id}",
+        ):
+            try:
+                with winreg.OpenKey(hive, subkey) as key:
+                    version, _ = winreg.QueryValueEx(key, "pv")
+                    if version and version != "0.0.0.0":
+                        return True
+            except OSError:
+                continue
+    return False
 
 
 def _block_forever() -> None:
