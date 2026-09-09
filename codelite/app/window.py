@@ -299,9 +299,18 @@ def run(config: AppConfig | None = None, headless: bool = False) -> None:
             min_size=(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT),
             js_api=JsApi(),
         )
+        # webview.start()'s icon is handed straight to System.Drawing.Icon on
+        # Windows' WinForms backend, which only accepts the .ico container
+        # format -- a .png there throws ArgumentException deep inside a
+        # WinForms-internal thread we never get a call stack on, taking the
+        # whole process down before our own except clause even runs.
         icon_candidates = (
-            Path(__file__).with_name("static") / "icon.png",
-            Path("/usr/share/icons/hicolor/256x256/apps/code-lite.png"),
+            (Path(__file__).with_name("static") / "icon.ico",)
+            if os.name == "nt"
+            else (
+                Path(__file__).with_name("static") / "icon.png",
+                Path("/usr/share/icons/hicolor/256x256/apps/code-lite.png"),
+            )
         )
         icon = next((str(path) for path in icon_candidates if path.is_file()), None)
         webview.start(icon=icon)
