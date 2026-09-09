@@ -58,25 +58,45 @@ def serve_in_background(config: AppConfig) -> threading.Thread:
     # request log so the terminal stays readable.
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
-    thread = threading.Thread(
-        target=lambda: app.run(
-            host=config.host,
-            port=config.port,
-            threaded=True,
-            debug=False,
-            use_reloader=False,
-        ),
-        name="codelite-server",
-        daemon=True,
-    )
+    # A --windowed build has no console, so an exception raised inside the
+    # daemon thread (most commonly a bind failure -- the port is taken, or on
+    # Windows blocked by a Hyper-V/WSL dynamic port exclusion range) would
+    # otherwise vanish silently and the app would just sit there for the
+    # full startup timeout before quitting with no visible sign of why.
+    server_error: list[BaseException] = []
+
+    def _serve() -> None:
+        try:
+            app.run(
+                host=config.host,
+                port=config.port,
+                threaded=True,
+                debug=False,
+                use_reloader=False,
+            )
+        except BaseException as error:  # noqa: BLE001 - reported to the main thread, not swallowed
+            server_error.append(error)
+
+    thread = threading.Thread(target=_serve, name="codelite-server", daemon=True)
     thread.start()
-    _wait_for_port(config.host, config.port)
+    _wait_for_port(config.host, config.port, thread, server_error)
     return thread
 
 
-def _wait_for_port(host: str, port: int) -> None:
+def _wait_for_port(
+    host: str, port: int, thread: threading.Thread, server_error: list[BaseException]
+) -> None:
     deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
+        if server_error:
+            raise RuntimeError(
+                f"The Code Lite server could not start on {host}:{port}: "
+                f"{server_error[0]}"
+            ) from server_error[0]
+        if not thread.is_alive():
+            raise RuntimeError(
+                f"The Code Lite server on {host}:{port} exited unexpectedly during startup."
+            )
         with socket.socket() as probe:
             probe.settimeout(0.4)
             if probe.connect_ex((host, port)) == 0:
@@ -270,3 +290,24 @@ def _block_forever() -> None:
             time.sleep(3600)
     except KeyboardInterrupt:
         pass
+
+
+def show_startup_error(message: str) -> None:
+    """Report a startup failure even when no console is attached.
+
+    A ``--windowed`` PyInstaller build has no terminal, so printing to
+    stderr leaves the user with nothing: the process just quits and it
+    looks like the app "does nothing" on double-click. On Windows, fall
+    back to a native message box so the failure is actually seen.
+    """
+    print(f"error: {message}", file=sys.stderr)
+    if os.name == "nt":
+        try:
+            import ctypes  # noqa: PLC0415 - Windows-only fallback
+
+            MB_ICONERROR = 0x10
+            ctypes.windll.user32.MessageBoxW(  # type: ignore[attr-defined]
+                None, message, WINDOW_TITLE, MB_ICONERROR
+            )
+        except Exception:  # noqa: BLE001 - best-effort, never block on this
+            logger.debug("Could not show the native error dialog", exc_info=True)

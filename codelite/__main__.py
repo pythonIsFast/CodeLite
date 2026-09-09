@@ -25,7 +25,7 @@ import logging
 import sys
 from pathlib import Path
 
-from .app.window import run
+from .app.window import run, show_startup_error
 from .config import DEFAULT_HOST, DEFAULT_PORT, AppConfig
 from .permission.modes import Mode
 
@@ -78,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         return 0
     except RuntimeError as error:
-        print(f"error: {error}", file=sys.stderr)
+        show_startup_error(str(error))
         return 1
     return 0
 
