@@ -281,7 +281,24 @@ def run(config: AppConfig | None = None, headless: bool = False) -> None:
         Path("/usr/share/icons/hicolor/256x256/apps/code-lite.png"),
     )
     icon = next((str(path) for path in icon_candidates if path.is_file()), None)
-    webview.start(icon=icon)
+
+    try:
+        webview.start(icon=icon)
+    except Exception as error:  # noqa: BLE001 - the native webview backend can fail in many ways
+        # On Windows this is almost always a missing/broken WebView2 Runtime.
+        # webview.start() runs the whole native event loop, so any failure in
+        # it (not just ours) must still reach the user -- in a --windowed
+        # build there is no console to print a traceback to, so without this
+        # the app just silently disappears after a few seconds.
+        logger.error("The native window could not start", exc_info=True)
+        hint = (
+            "\n\nThis is usually a missing or broken Microsoft Edge WebView2 "
+            "Runtime. Install it from:\n"
+            "https://developer.microsoft.com/microsoft-edge/webview2/"
+            if os.name == "nt"
+            else ""
+        )
+        show_startup_error(f"The Code Lite window could not start: {error}{hint}")
 
 
 def _block_forever() -> None:
