@@ -36,6 +36,7 @@ from .chat import (
 )
 from .config import ProviderConfig
 from .limits import RateLimits
+from .pollinations import POLLINATIONS_MODEL, PollinationsTransport
 from .images import (
     ImageRequestError,
     prepare_image_edit_request,
@@ -56,6 +57,8 @@ class Session:
     def __init__(self, config: ProviderConfig | None = None) -> None:
         self.config = config or ProviderConfig()
         self._transport = CodexTransport(self.config, self._resolve_auth)
+        self._pollinations = PollinationsTransport()
+        self.use_pollinations_free = False
 
     def _resolve_auth(self) -> EffectiveAuth:
         return load_auth_tokens(self.config)
@@ -74,6 +77,8 @@ class Session:
     # -- models --------------------------------------------------------------
 
     def list_models(self) -> list[str]:
+        if self.use_pollinations_free:
+            return [POLLINATIONS_MODEL]
         return self._transport.list_model_ids()
 
     def model_capabilities(self, model: str) -> dict[str, Any]:
@@ -82,6 +87,8 @@ class Session:
         Empty lists when the catalog is unreachable, so a caller falls back
         rather than offering a level the model would reject.
         """
+        if self.use_pollinations_free:
+            return {"efforts": [], "default_effort": "", "fast": False}
         info = self._transport.resolve_model_info(model)
         if info is None:
             return {"efforts": [], "default_effort": "", "fast": False}
@@ -102,6 +109,8 @@ class Session:
         ``None`` when the catalog is unreachable or does not know the model --
         callers should fall back rather than substitute a guess.
         """
+        if self.use_pollinations_free:
+            return None
         info = self._transport.resolve_model_info(model)
         return info.context_window if info else None
 
@@ -110,7 +119,9 @@ class Session:
     def send_responses(
         self, body: dict[str, Any], *, stream: bool = False
     ) -> dict[str, Any] | Iterator[bytes]:
-        """Send a raw Responses-API-shaped request straight through to Codex."""
+        """Send a raw Responses-shaped request through the active provider."""
+        if self.use_pollinations_free:
+            return self._pollinations.send_responses_request(body, stream=stream)
         return self._transport.send_responses_request(body, stream=stream)
 
     # -- chat completions --------------------------------------------------------
@@ -118,7 +129,7 @@ class Session:
     def send_chat(self, request: dict[str, Any]) -> dict[str, Any]:
         """Non-streaming Chat Completions call, translated through `/responses`."""
         responses_body = chat_request_to_responses_body(request)
-        response = self._transport.send_responses_request(responses_body, stream=False)
+        response = self.send_responses(responses_body, stream=False)
         assert isinstance(response, dict)
         result = parse_responses_output(response)
         return build_chat_completion_response(request.get("model", ""), result)
@@ -126,7 +137,7 @@ class Session:
     def stream_chat(self, request: dict[str, Any]) -> Iterator[bytes]:
         """Streaming Chat Completions call: yields `data: ...\\n\\n` SSE chunks."""
         responses_body = chat_request_to_responses_body(request)
-        raw_chunks = self._transport.send_responses_request(responses_body, stream=True)
+        raw_chunks = self.send_responses(responses_body, stream=True)
         assert not isinstance(raw_chunks, dict)
         return stream_responses_as_chat_completion_chunks(request.get("model", ""), raw_chunks)
 

@@ -1032,6 +1032,29 @@ button { cursor: pointer; }
 
 .behaviour-control .custom-select { min-width: 150px; }
 
+.setting-toggle { position: relative; display: inline-flex; cursor: pointer; }
+.setting-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.setting-toggle-track {
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background 120ms ease;
+}
+.setting-toggle-track::after {
+  content: "";
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: 3px;
+  border-radius: 50%;
+  background: var(--text);
+  transition: transform 120ms ease;
+}
+.setting-toggle input:checked + .setting-toggle-track { background: var(--accent); }
+.setting-toggle input:checked + .setting-toggle-track::after { transform: translateX(16px); }
+.setting-toggle input:focus-visible + .setting-toggle-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 .behaviour-models { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; max-width: 320px; }
 .behaviour-model {
   display: flex;

@@ -50,6 +50,7 @@ from ..updater import UpdateError, check_update, install_update
 from ..permission.modes import Mode
 from ..provider.auth import AuthError
 from ..provider.login import ChatGPTLoginManager
+from ..provider.pollinations import POLLINATIONS_MODEL
 from ..remote import REMOTE_COOKIE, RemoteError, RemoteManager
 from ..project.context import (
     GLOBAL_MEMORY_PATH,
@@ -238,7 +239,11 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
             {
                 "cwd": str(Path.cwd()),
                 "home": str(Path.home()),
-                "default_model": runtime.config.agent_model,
+                "default_model": (
+                    POLLINATIONS_MODEL
+                    if runtime.config.use_pollinations_free
+                    else runtime.config.agent_model
+                ),
                 "judge_model": runtime.config.judge_model,
                 "default_mode": runtime.config.default_permission_mode.value,
                 "modes": [
@@ -258,6 +263,7 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
             return jsonify(
                 {
                     "models": slugs,
+                    "free_mode": rt().config.use_pollinations_free,
                     "efforts": list(REASONING_EFFORTS),
                     "capabilities": {
                         slug: session.model_capabilities(slug) for slug in slugs
@@ -320,7 +326,9 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
 
     @app.get("/api/auth")
     def auth_status():
-        return jsonify(login_manager().status())
+        status = login_manager().status()
+        status["free_mode"] = rt().config.use_pollinations_free
+        return jsonify(status)
 
     @app.post("/api/auth/login")
     def start_auth_login():
