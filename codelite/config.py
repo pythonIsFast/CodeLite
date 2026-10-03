@@ -50,17 +50,20 @@ MAX_TOOL_OUTPUT_CHARS = 30_000
 #: The hard stop remains only as a safe fallback if compaction itself fails.
 CONTEXT_COMPACT_FRACTION = 0.80
 CONTEXT_STOP_FRACTION = 0.95
-# Offline fallback only. Codex's /models catalog does report each model's real
-# `context_window`, and that is what the app prefers -- see
+# Offline fallback only. Codex's /models catalog reports each model's real
+# capability as `max_context_window`, and that is what the app prefers -- see
 # `Session.context_window`. These are the figures the catalog returned on
-# 2026-08-23, kept so the indicator still works when the catalog is
-# unreachable. Unlisted models fall back to DEFAULT_CONTEXT_WINDOW.
+# 2026-08-23 (`gpt-5.6-sol` updated 2026-10-03 to its documented 1.05M
+# capability -- Codex's own *default*, which this table otherwise mirrors, is
+# a conservative 272k tuned for cost/performance, not a model limit), kept so
+# the indicator still works when the catalog is unreachable. Unlisted models
+# fall back to DEFAULT_CONTEXT_WINDOW.
 DEFAULT_CONTEXT_WINDOW = 272_000
 CONTEXT_WINDOWS: dict[str, int] = {
     # Astra accepts 1.05M total tokens; 128k are reserved for output, leaving
     # the 922k effective input budget used by Code Lite's compaction meter.
     "gpt-6-astra": 922_000,
-    "gpt-5.6-sol": 272_000,
+    "gpt-5.6-sol": 1_050_000,
     "gpt-5.6-terra": 272_000,
     "gpt-5.6-luna": 272_000,
     "gpt-5.5": 272_000,

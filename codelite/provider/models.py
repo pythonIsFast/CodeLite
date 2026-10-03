@@ -108,9 +108,10 @@ class CodexModelInfo:
     #: 1.05M total context reserves 128k output tokens and leaves 922000 input.
     #: The app compacts before the configured fraction of that budget.
     context_window: int | None = None
-    #: What the underlying model could take. Capability, not policy: requests
-    #: are held to `context_window` regardless, so this must not be used as
-    #: the denominator for a usage indicator.
+    #: What the underlying model could take. Codex's own `context_window` is
+    #: tuned down from this for its default cost/performance profile (e.g.
+    #: GPT-5.6 Sol: 1.05M here vs. 272000 in `context_window`) -- see
+    #: `Session.context_window`, which prefers this figure.
     max_context_window: int | None = None
     display_name: str | None = None
     #: Reasoning levels this model accepts, cheapest first, straight from the

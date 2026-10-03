@@ -97,13 +97,23 @@ class Session:
         }
 
     def context_window(self, model: str) -> int | None:
-        """The model's context window in tokens, straight from Codex's catalog.
+        """The model's usable context window in tokens, from Codex's catalog.
+
+        Prefers ``max_context_window`` -- the model's real capability -- over
+        the catalog's ``context_window``, which Codex tunes down for its own
+        cost/performance defaults (e.g. GPT-5.6 Sol reports a 1.05M capability
+        but a 272k default). Community reports on the stock Codex CLI confirm
+        the model accepts and performs fine with the larger figure; Code Lite
+        always requests it rather than leaving it behind an opt-in, the way
+        Codex CLI's own ``model_context_window`` override does.
 
         ``None`` when the catalog is unreachable or does not know the model --
         callers should fall back rather than substitute a guess.
         """
         info = self._transport.resolve_model_info(model)
-        return info.context_window if info else None
+        if info is None:
+            return None
+        return info.max_context_window or info.context_window
 
     # -- responses -------------------------------------------------------------
 
