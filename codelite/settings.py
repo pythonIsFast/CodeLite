@@ -34,6 +34,7 @@ from typing import Any, Iterable, Mapping
 
 #: Groups in the order the UI shows them. The last one is deliberately last.
 GROUPS: tuple[tuple[str, str, str], ...] = (
+    ("provider", "Provider", "Choose how Code Lite reaches an AI model."),
     ("agent", "Agent", "Which models do the work."),
     ("auto", "Auto mode", "What the Auto picker is allowed to choose."),
     ("tools", "Tools", "Limits on what a single tool call may take or return."),
@@ -61,7 +62,7 @@ GROUPS: tuple[tuple[str, str, str], ...] = (
 class Setting:
     key: str
     label: str
-    #: "int", "float", "model" (one slug) or "models" (a set of slugs).
+    #: "bool", "int", "float", "model" (one slug) or "models" (a set of slugs).
     kind: str
     default: Any
     group: str
@@ -87,6 +88,14 @@ class Setting:
 
 
 SETTINGS: tuple[Setting, ...] = (
+    Setting(
+        key="use_pollinations_free",
+        label="Use for free with Pollinations",
+        kind="bool",
+        default=False,
+        group="provider",
+        help="Experimental: use Pollinations anonymously instead of ChatGPT. Requests are spaced at least 15 seconds apart and the service can be unavailable.",
+    ),
     Setting(
         key="agent_model",
         label="Default model",
@@ -305,6 +314,10 @@ def _clamp(value: float, setting: Setting) -> float:
 
 
 def _coerce_one(setting: Setting, value: Any, known_models: set[str]) -> Any:
+    if setting.kind == "bool":
+        if not isinstance(value, bool):
+            raise ValueError(f"{setting.label} must be on or off.")
+        return value
     if setting.kind == "int":
         # Reject bools explicitly: `isinstance(True, int)` is True in Python.
         if isinstance(value, bool) or not isinstance(value, (int, float)):

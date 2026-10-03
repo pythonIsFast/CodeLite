@@ -125,6 +125,7 @@ const el = {
   projectLspSave: $("project-lsp-save"),
   authOverlay: $("auth-overlay"),
   authLogin: $("auth-login"),
+  authFree: $("auth-free"),
   authStatus: $("auth-status"),
   authManual: $("auth-manual"),
   authOpenLink: $("auth-open-link"),
@@ -190,12 +191,15 @@ const del = (path) => api(path, { method: "DELETE" });
 
 function renderAuth(auth) {
   state.auth = auth;
-  const label = auth.account_label || "ChatGPT account";
-  el.accountName.textContent = auth.authenticated ? label : "Not signed in";
-  el.accountDetail.textContent = auth.authenticated
-    ? (auth.email && auth.email !== label ? auth.email : "Connected with ChatGPT")
-    : "Connect your ChatGPT subscription to use Code Lite.";
-  el.authOverlay.hidden = Boolean(auth.authenticated);
+  const ready = auth.authenticated || auth.free_mode;
+  const label = auth.free_mode ? "Pollinations free mode" : (auth.account_label || "ChatGPT account");
+  el.accountName.textContent = ready ? label : "Not signed in";
+  el.accountDetail.textContent = auth.free_mode
+    ? "Anonymous requests are limited to one every 15 seconds."
+    : (auth.authenticated
+      ? (auth.email && auth.email !== label ? auth.email : "Connected with ChatGPT")
+      : "Connect your ChatGPT subscription to use Code Lite.");
+  el.authOverlay.hidden = Boolean(ready);
 
   const waiting = auth.login_status === "waiting";
   el.authLogin.disabled = waiting;
@@ -224,6 +228,18 @@ async function refreshAuth() {
   const auth = await get("/api/auth");
   renderAuth(auth);
   return auth;
+}
+
+async function enablePollinationsFree() {
+  el.authFree.disabled = true;
+  try {
+    const data = await get("/api/settings/behaviour");
+    state.behaviour = data;
+    await saveBehaviour({ ...data.values, use_pollinations_free: true });
+    await loadAuthenticatedApp();
+  } finally {
+    el.authFree.disabled = false;
+  }
 }
 
 async function loadProjectSettings() {
@@ -423,7 +439,18 @@ function behaviourRow(setting, value, models) {
   const control = document.createElement("div");
   control.className = "behaviour-control";
 
-  if (setting.kind === "models") {
+  if (setting.kind === "bool") {
+    const toggle = document.createElement("label");
+    toggle.className = "setting-toggle";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = Boolean(value);
+    box.dataset.settingKey = setting.key;
+    const track = document.createElement("span");
+    track.className = "setting-toggle-track";
+    toggle.append(box, track);
+    control.appendChild(toggle);
+  } else if (setting.kind === "models") {
     const list = document.createElement("div");
     list.className = "behaviour-models";
     const selected = new Set(value || []);
@@ -537,6 +564,9 @@ async function loadBehaviour() {
 
 function collectBehaviour() {
   const values = {};
+  for (const input of el.behaviourGroups.querySelectorAll("input[type=checkbox][data-setting-key]")) {
+    values[input.dataset.settingKey] = input.checked;
+  }
   for (const input of el.behaviourGroups.querySelectorAll("input[type=number]")) {
     const raw = Number(input.value);
     if (input.value === "" || Number.isNaN(raw)) continue;
@@ -553,6 +583,7 @@ function collectBehaviour() {
 }
 
 async function saveBehaviour(values) {
+  const previousFree = Boolean(state.behaviour?.values?.use_pollinations_free);
   const data = await api("/api/settings/behaviour", {
     method: "PUT",
     body: JSON.stringify({ values }),
@@ -568,7 +599,17 @@ async function saveBehaviour(values) {
     ? `Saved. ${clamped.length} value(s) were adjusted to their allowed range.`
     : "Saved.";
   toast("Settings saved.");
+  state.meta = await get("/api/meta");
   await loadModels();
+  const freeChanged = previousFree !== Boolean(data.values.use_pollinations_free);
+  if (freeChanged && state.active) {
+    const model = data.values.use_pollinations_free ? "openai-fast" : state.meta.default_model;
+    state.active = await patch(`/api/conversations/${state.active.id}`, { model });
+    ensureModelOption(model);
+    el.modelSelect.value = model;
+    renderCustomSelect(el.modelSelect);
+  }
+  await refreshAuth();
 }
 
 async function loadCodexImport() {
@@ -2357,7 +2398,9 @@ function renderFastToggle(requested, model) {
 async function loadModels() {
   try {
     const data = await get("/api/models");
-    state.models = ["auto", ...(data.models || []).filter((model) => model !== "auto")];
+    state.models = data.free_mode
+      ? (data.models || [])
+      : ["auto", ...(data.models || []).filter((model) => model !== "auto")];
     state.efforts = data.efforts || ["low", "medium", "high"];
     state.capabilities = data.capabilities || {};
   } catch (error) {
@@ -2492,6 +2535,12 @@ function dataTransferHasFiles(dataTransfer) {
 
 function wireEvents() {
   el.authLogin.addEventListener("click", startAuthLogin);
+  el.authFree.addEventListener("click", () => {
+    enablePollinationsFree().catch((error) => {
+      el.authStatus.textContent = error.message;
+      el.authStatus.classList.add("error");
+    });
+  });
   el.settingsLogin.addEventListener("click", startAuthLogin);
   el.authCopyLink.addEventListener("click", copyAuthLink);
   el.settingsAuthCopyLink.addEventListener("click", copyAuthLink);
@@ -2812,7 +2861,7 @@ async function init() {
   loadRemote().catch(() => {});
   startClock();
   const auth = await refreshAuth();
-  if (auth.authenticated) {
+  if (auth.authenticated || auth.free_mode) {
     await loadAuthenticatedApp();
   } else {
     setBusy(false);

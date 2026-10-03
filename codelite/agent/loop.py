@@ -37,6 +37,7 @@ from typing import Any, Callable, Iterator
 from ..config import FAST_SERVICE_TIER, AppConfig, context_window_for, normalize_effort
 from ..db.store import Conversation, Store
 from ..permission.manager import PermissionDenied, PermissionManager
+from ..provider.pollinations import POLLINATIONS_MODEL
 from ..provider.session import Session
 from ..provider.sse import iterate_server_sent_events
 from ..project.context import build_project_context
@@ -160,7 +161,11 @@ class AgentRunner:
         message_id: str | None = None,
     ) -> None:
         self._run_tokens_used = 0
-        self._run_model = self._conversation.model
+        self._run_model = (
+            POLLINATIONS_MODEL
+            if self._config.use_pollinations_free
+            else self._conversation.model
+        )
         # Whatever the user picked holds for the whole run. Auto may replace it
         # below, because choosing the model without choosing how hard it thinks
         # only decides half the question.

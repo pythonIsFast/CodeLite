@@ -37,6 +37,7 @@ from ..db.store import Conversation, Store
 from ..permission.manager import PermissionManager
 from ..permission.modes import Mode
 from ..provider.config import ProviderConfig
+from ..provider.pollinations import POLLINATIONS_MODEL
 from ..provider.session import Session
 from ..questions import QuestionManager
 
@@ -98,6 +99,7 @@ class Runtime:
         for key, value in values.items():
             if hasattr(self.config, key):
                 setattr(self.config, key, tuple(value) if isinstance(value, list) else value)
+        self.session.use_pollinations_free = self.config.use_pollinations_free
         behaviour.apply(values)
         return values
 
@@ -106,10 +108,15 @@ class Runtime:
 
     def save_behaviour_settings(self, raw: dict[str, Any]) -> dict[str, Any]:
         """Validate, persist and activate. Raises ValueError on a bad type."""
+        target_free = raw.get("use_pollinations_free", self.config.use_pollinations_free)
+        previous_free = self.session.use_pollinations_free
         try:
-            models = self.session.list_models()
+            self.session.use_pollinations_free = bool(target_free)
+            models = [] if target_free else self.session.list_models()
         except Exception:  # noqa: BLE001 - a catalog outage must not block a save
             models = []
+        finally:
+            self.session.use_pollinations_free = previous_free
         values = behaviour.coerce(raw, models)
         self.store.set_state(BEHAVIOUR_KEY, values)
         return self._apply_behaviour(values)
@@ -129,7 +136,9 @@ class Runtime:
             raise ValueError(f"{resolved_workspace} is not a directory.")
         return self.store.create_conversation(
             workspace=str(resolved_workspace),
-            model=model or self.config.agent_model,
+            model=model or (
+                POLLINATIONS_MODEL if self.config.use_pollinations_free else self.config.agent_model
+            ),
             permission_mode=(mode or self.config.default_permission_mode).value,
             reasoning_effort=normalize_effort(
                 reasoning_effort
