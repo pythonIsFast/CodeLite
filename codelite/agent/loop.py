@@ -318,6 +318,7 @@ class AgentRunner:
                 ephemeral_inputs.clear()
 
             turn_meta = self._publish_usage(response.get("usage") or {})
+            self._publish_plan_usage()
 
             output_items = [i for i in (response.get("output") or []) if isinstance(i, dict)]
             if output_items:
@@ -543,6 +544,24 @@ class AgentRunner:
         if isinstance(output_tokens, int) and output_tokens > 0:
             meta["output_tokens"] = output_tokens
         return meta
+
+    def _publish_plan_usage(self) -> None:
+        """Push the weekly-allowance ring's newest reading after this step.
+
+        Codex returns these figures as headers on every single response, so
+        they are already current after each turn -- previously the UI only
+        saw them once the whole (possibly many-turn) run finished, via
+        ``Runtime.refresh_plan_usage``'s call in its ``finally`` block. That
+        call still runs, and still owns persisting the snapshot to survive a
+        restart; this just stops the live indicator from sitting stale for
+        however long the rest of the run takes.
+        """
+        try:
+            limits = self._session.rate_limits
+        except Exception:  # noqa: BLE001 - a display figure must not fail a run
+            return
+        if limits is not None:
+            self._publish("plan_usage", limits.as_dict())
 
     def _record_auxiliary_usage(self, usage: dict[str, Any] | None) -> None:
         """Account for routing without replacing the visible chat context figure."""
