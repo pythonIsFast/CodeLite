@@ -88,10 +88,10 @@ class Session:
         rather than offering a level the model would reject.
         """
         if self.use_pollinations_free:
-            return {"efforts": [], "default_effort": "", "fast": False}
+            return {"efforts": [], "default_effort": "", "fast": False, "flex": False}
         info = self._transport.resolve_model_info(model)
         if info is None:
-            return {"efforts": [], "default_effort": "", "fast": False}
+            return {"efforts": [], "default_effort": "", "fast": False, "flex": False}
         eu_astra = model == "gpt-6-astra" and self.config.is_eu_data_residency
         return {
             "efforts": list(info.supported_reasoning_levels),
@@ -101,6 +101,7 @@ class Session:
                 "Fast mode is unavailable for GPT-6 Astra with EU data residency."
                 if eu_astra else ""
             ),
+            "flex": info.supports_flex,
         }
 
     def context_window(self, model: str) -> int | None:

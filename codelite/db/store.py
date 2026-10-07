@@ -80,6 +80,10 @@ MIGRATIONS: tuple[tuple[str, str, str], ...] = (
     # 1 requests the Fast service tier. Whether it is granted is the
     # server's call and is not stored -- only ever read off a response.
     ("conversations", "fast_mode", "INTEGER NOT NULL DEFAULT 0"),
+    # 1 requests the Flex service tier (cheaper, slower -- the opposite
+    # tradeoff from Fast). Mutually exclusive with fast_mode; the UI enforces
+    # that, same as it does for the pair of toggles.
+    ("conversations", "flex_mode", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 
@@ -107,6 +111,8 @@ class Conversation:
     reasoning_effort: str = ""
     #: Whether this conversation asks for the Fast tier on every turn.
     fast_mode: int = 0
+    #: Whether this conversation asks for the Flex tier on every turn.
+    flex_mode: int = 0
     #: The external session this was imported from, empty when started here.
     #: `from_row` splats every column, so a new column has to land here too.
     source_id: str = ""
@@ -124,6 +130,7 @@ class Conversation:
             "permission_mode": self.permission_mode,
             "reasoning_effort": self.reasoning_effort,
             "fast_mode": bool(self.fast_mode),
+            "flex_mode": bool(self.flex_mode),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "context_tokens": self.context_tokens,
@@ -175,6 +182,7 @@ class Store:
         title: str = "",
         reasoning_effort: str = "",
         fast_mode: int = 0,
+        flex_mode: int = 0,
     ) -> Conversation:
         conversation = Conversation(
             id=uuid.uuid4().hex,
@@ -186,12 +194,13 @@ class Store:
             updated_at=_now(),
             reasoning_effort=reasoning_effort,
             fast_mode=fast_mode,
+            flex_mode=flex_mode,
         )
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO conversations (id, title, workspace, model, "
                 "permission_mode, created_at, updated_at, reasoning_effort, "
-                "fast_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "fast_mode, flex_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     conversation.id,
                     conversation.title,
@@ -202,6 +211,7 @@ class Store:
                     conversation.updated_at,
                     conversation.reasoning_effort,
                     conversation.fast_mode,
+                    conversation.flex_mode,
                 ),
             )
         return conversation

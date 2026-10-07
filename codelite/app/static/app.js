@@ -20,6 +20,7 @@ const el = {
   modelSelect: $("model-select"),
   effortSelect: $("effort-select"),
   fastToggle: $("fast-toggle"),
+  flexToggle: $("flex-toggle"),
   modeSelect: $("mode-select"),
   compactContext: $("compact-context"),
   attachmentPicker: $("attachment-picker"),
@@ -2114,6 +2115,7 @@ async function openConversation(conversationId) {
   renderCustomSelect(el.modelSelect);
   fillEffortSelect(el.effortSelect, data.reasoning_effort || "", data.model);
   renderFastToggle(data.fast_mode, data.model);
+  renderFlexToggle(data.flex_mode, data.model);
 
   renderEntries(data.entries || []);
   renderConversationList();
@@ -2361,6 +2363,13 @@ function supportsFast(model) {
   return Boolean(capability && capability.fast);
 }
 
+function supportsFlex(model) {
+  if (!model) return false;
+  if (model === "auto") return Object.values(state.capabilities).some((c) => c.flex);
+  const capability = state.capabilities[model];
+  return Boolean(capability && capability.flex);
+}
+
 /**
  * Fill an effort picker. The empty value comes first and means "use the
  * model's own default", which Codex reports per model -- Sol defaults to low
@@ -2391,8 +2400,14 @@ function fillEffortSelect(select, selected = "", model = "") {
 function renderFastToggle(requested, model) {
   el.fastToggle.hidden = !supportsFast(model);
   const capability = state.capabilities[model];
-  el.fastToggle.title = capability?.fast_unavailable_reason || "";
+  el.fastToggle.title = capability?.fast_unavailable_reason || "Fast: 1.5x speed, increased usage";
   el.fastToggle.setAttribute("aria-pressed", String(Boolean(requested)));
+}
+
+/** Same idea as renderFastToggle, for the cheaper/slower Flex tier. */
+function renderFlexToggle(requested, model) {
+  el.flexToggle.hidden = !supportsFlex(model);
+  el.flexToggle.setAttribute("aria-pressed", String(Boolean(requested)));
 }
 
 async function loadModels() {
@@ -2421,6 +2436,7 @@ async function loadModels() {
   fillEffortSelect(el.effortSelect, active.reasoning_effort || "", el.modelSelect.value);
   fillEffortSelect(el.newEffort, "", el.modelSelect.value);
   renderFastToggle(active.fast_mode, el.modelSelect.value);
+  renderFlexToggle(active.flex_mode, el.modelSelect.value);
 }
 
 /* -- Custom selects ------------------------------------------------------- */
@@ -2684,6 +2700,7 @@ function wireEvents() {
     // be rebuilt here -- a level the new model rejects would be a 400.
     fillEffortSelect(el.effortSelect, el.effortSelect.value, model);
     renderFastToggle(state.active && state.active.fast_mode, model);
+    renderFlexToggle(state.active && state.active.flex_mode, model);
     if (!state.active) return;
     const body = { model };
     if (el.effortSelect.value !== (state.active.reasoning_effort || "")) {
@@ -2722,8 +2739,20 @@ function wireEvents() {
   el.fastToggle.addEventListener("click", async () => {
     const next = el.fastToggle.getAttribute("aria-pressed") !== "true";
     renderFastToggle(next, el.modelSelect.value);
+    // Mutually exclusive with Flex -- both set one Codex `service_tier`.
+    if (next) renderFlexToggle(false, el.modelSelect.value);
     if (!state.active) return;
     const updated = await patch(`/api/conversations/${state.active.id}`, { fast_mode: next })
+      .catch((error) => { toast(error.message, true); return null; });
+    if (updated) Object.assign(state.active, updated);
+  });
+
+  el.flexToggle.addEventListener("click", async () => {
+    const next = el.flexToggle.getAttribute("aria-pressed") !== "true";
+    renderFlexToggle(next, el.modelSelect.value);
+    if (next) renderFastToggle(false, el.modelSelect.value);
+    if (!state.active) return;
+    const updated = await patch(`/api/conversations/${state.active.id}`, { flex_mode: next })
       .catch((error) => { toast(error.message, true); return null; });
     if (updated) Object.assign(state.active, updated);
   });
@@ -2783,6 +2812,7 @@ function wireEvents() {
         model: el.modelSelect.value || state.meta.default_model,
         reasoning_effort: el.newEffort.value,
         fast_mode: el.fastToggle.getAttribute("aria-pressed") === "true",
+        flex_mode: el.flexToggle.getAttribute("aria-pressed") === "true",
       });
       el.newOverlay.hidden = true;
       await loadConversations();

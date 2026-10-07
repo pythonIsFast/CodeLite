@@ -40,11 +40,17 @@ from .config import CODEX_REGISTRY_URL, DEFAULT_CODEX_CLIENT_VERSION
 _VERSION_CACHE_TTL_SECONDS = 60 * 60
 _VERSION_RE = re.compile(r"\b\d+\.\d+\.\d+\b")
 
-#: The only non-default service tier Codex exposes. Requesting it is not the
-#: same as getting it: the response echoes the tier that was actually used,
-#: and an account without the entitlement is served "default" without an
-#: error -- so the echo is the only honest source for what happened.
+#: Codex's non-default service tiers. Requesting either is not the same as
+#: getting it: the response echoes the tier that was actually used, and an
+#: account without the entitlement is served "default" without an error --
+#: so the echo is the only honest source for what happened.
 PRIORITY_SERVICE_TIER = "priority"
+#: The cheap/slow counterpart to Fast -- roughly half price, best-effort
+#: latency. Support is inconsistent across Codex versions/models (tracked
+#: upstream in openai/codex#31562 and #37813), so this is sent the same
+#: opportunistic way as Fast: if the model/account doesn't support it, Codex
+#: ignores it rather than erroring.
+FLEX_SERVICE_TIER = "flex"
 
 _cached_version: str | None = None
 _cached_version_expires_at: float = 0.0
@@ -128,6 +134,11 @@ class CodexModelInfo:
     def supports_fast(self) -> bool:
         """Whether this model offers the Fast (priority) service tier."""
         return PRIORITY_SERVICE_TIER in self.service_tiers
+
+    @property
+    def supports_flex(self) -> bool:
+        """Whether this model offers the Flex service tier."""
+        return FLEX_SERVICE_TIER in self.service_tiers
 
 
 def _optional_str(value: Any) -> str | None:

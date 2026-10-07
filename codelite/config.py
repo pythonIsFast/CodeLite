@@ -87,6 +87,10 @@ REASONING_EFFORTS = ("low", "medium", "high", "xhigh", "max", "ultra")
 #: response, and that echo is what the UI reports.
 FAST_SERVICE_TIER = "priority"
 
+#: Requesting the Flex tier -- roughly half the cost of the default tier, at
+#: best-effort latency. Same request-not-promise caveat as Fast above.
+FLEX_SERVICE_TIER = "flex"
+
 
 def normalize_effort(value: Any, allowed: Sequence[str] | None = None) -> str:
     """Coerce a requested reasoning level, falling back to the model default.

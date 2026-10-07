@@ -394,6 +394,7 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
                 mode=Mode.parse(body.get("mode"), rt().config.default_permission_mode),
                 reasoning_effort=body.get("reasoning_effort"),
                 fast_mode=bool(body.get("fast_mode")),
+                flex_mode=bool(body.get("flex_mode")),
             )
         except ValueError as error:
             return jsonify({"error": str(error)}), 400
@@ -462,8 +463,16 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
             fields["reasoning_effort"] = normalize_effort(body.get("reasoning_effort"))
             if conversation.model == "gpt-6-astra" and runtime.is_busy(conversation):
                 runtime.update_run_reasoning(conversation, fields["reasoning_effort"])
+        # Mutually exclusive -- a request sets at most one; whichever one it
+        # sets wins over whatever the other was previously.
         if "fast_mode" in body:
             fields["fast_mode"] = 1 if body.get("fast_mode") else 0
+            if fields["fast_mode"]:
+                fields["flex_mode"] = 0
+        if "flex_mode" in body:
+            fields["flex_mode"] = 1 if body.get("flex_mode") else 0
+            if fields["flex_mode"]:
+                fields["fast_mode"] = 0
         if fields:
             runtime.store.update_conversation(conversation_id, **fields)
 

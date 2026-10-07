@@ -798,19 +798,33 @@ button { cursor: pointer; }
   white-space: nowrap;
 }
 /* Shaped like a pill picker so the composer row stays one family of controls,
-   but it is a toggle: pressed means "ask for the Fast tier on every turn". */
+   but it is a toggle: pressed means "ask for the Fast/Flex tier on every
+   turn". Icon-only and compact -- there can be two of these (Fast, Flex) in
+   the same row as the model/effort pickers, and the label is already on the
+   tooltip, so spelling it out again in the pill would just burn space. */
 .pill-toggle {
   display: flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
   flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 4px 11px;
+  padding: 0;
   background: var(--bg-raised);
   color: var(--text-dim);
   font: inherit;
   font-size: 12px;
+  white-space: nowrap;
+}
+.pill-toggle span {
+  /* Visually hidden, kept for the accessible name instead of relying on `title`. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 .pill-toggle:hover { color: var(--text); }

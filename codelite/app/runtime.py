@@ -130,6 +130,7 @@ class Runtime:
         mode: Mode | None = None,
         reasoning_effort: str | None = None,
         fast_mode: bool = False,
+        flex_mode: bool = False,
     ) -> Conversation:
         resolved_workspace = Path(workspace).expanduser().resolve() if workspace else Path.cwd()
         if not resolved_workspace.is_dir():
@@ -145,7 +146,10 @@ class Runtime:
                 if reasoning_effort is not None
                 else self.config.default_reasoning_effort
             ),
-            fast_mode=1 if fast_mode else 0,
+            # Mutually exclusive -- the UI enforces this, but a request that
+            # somehow sends both must not pick one arbitrarily on the server.
+            fast_mode=1 if fast_mode and not flex_mode else 0,
+            flex_mode=1 if flex_mode and not fast_mode else 0,
         )
 
     def set_mode(self, conversation: Conversation, mode: Mode) -> None:

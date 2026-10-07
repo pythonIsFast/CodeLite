@@ -34,7 +34,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
-from ..config import FAST_SERVICE_TIER, AppConfig, context_window_for, normalize_effort
+from ..config import FAST_SERVICE_TIER, FLEX_SERVICE_TIER, AppConfig, context_window_for, normalize_effort
 from ..db.store import Conversation, Store
 from ..permission.manager import PermissionDenied, PermissionManager
 from ..provider.pollinations import POLLINATIONS_MODEL
@@ -597,6 +597,13 @@ class AgentRunner:
             # Send it anyway: an unsupported tier is ignored, not an error.
             return True
 
+    def _model_supports_flex(self) -> bool:
+        """Whether the run's model offers the Flex tier, per Codex's catalog."""
+        try:
+            return bool(self._session.model_capabilities(self._run_model).get("flex"))
+        except Exception:  # noqa: BLE001 - a catalog hiccup must not fail a run
+            return True
+
     def _request_turn(self, items: list[dict[str, Any]]) -> dict[str, Any] | None:
         body = {
             "model": self._run_model,
@@ -623,6 +630,8 @@ class AgentRunner:
         # response echoes `service_tier: "default"` no matter what was sent.
         if self._conversation.fast_mode and self._model_supports_fast():
             body["service_tier"] = FAST_SERVICE_TIER
+        elif self._conversation.flex_mode and self._model_supports_flex():
+            body["service_tier"] = FLEX_SERVICE_TIER
         chunks = self._session.send_responses(body, stream=True)
         if isinstance(chunks, dict):  # Defensive: stream=True should never buffer.
             return chunks
