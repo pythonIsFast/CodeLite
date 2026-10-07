@@ -348,24 +348,50 @@ def _screenshot_backend() -> Callable[[WindowLike], bytes] | None:
     return _gtk_screenshot
 
 
+#: Far enough off any real display that the window never overlaps a visible
+#: desktop, on any monitor arrangement.
+_OFFSCREEN_POSITION = -10_000
+
+
 def main() -> None:  # pragma: no cover - exercised manually, needs a real display
     import webview  # local import: only the child process needs this
 
-    # Not `hidden=True` at creation, on purpose: pywebview's GTK backend only
-    # honors `hidden` through a code path that runs before its own GTK main
-    # loop starts, which never happens for this (the process's only, "master")
-    # window -- its `show()` unconditionally schedules a real `show_all` once
-    # the loop is already running. A window that is never actually shown never
-    # fires pywebview's internal "shown" event either, and every window method
-    # (`load_url` included) blocks on exactly that event for up to 20s before
-    # raising `WebViewException("Main window failed to start")` -- which is
-    # what made the browser tool unusable on Linux: every single call to it
-    # hit this. Letting the window actually show once, then hiding it
-    # ourselves right after, gets a real "shown" event out of GTK and keeps
-    # every later call working; it costs one brief on-screen flash at the
-    # first browser-tool use instead of the window never working at all.
+    # Positioned off-screen, not `hidden=True` -- two separate bugs ruled out
+    # by hand (verified under Xvfb + WebKitGTK, not just read in source):
+    #
+    # 1. pywebview's GTK backend only honors `hidden` through a code path that
+    #    runs before its own GTK main loop starts, which never happens for
+    #    this process's one and only ("master") window -- its `show()`
+    #    unconditionally schedules a real `show_all` once the loop is already
+    #    running, `hidden` or not. A window that is never actually shown
+    #    never fires pywebview's internal "shown"/"_pywebviewready" events
+    #    either, and every window method (`load_url`, `evaluate_js`) blocks on
+    #    exactly that event for up to 20s before raising
+    #    `WebViewException("Main window failed to start")`.
+    #
+    # 2. Showing the window and then calling `window.hide()` avoids that, but
+    #    creates a worse, silent problem: GTK unmaps the window, WebKit sees
+    #    that as the page going into the background, and sets
+    #    `document.hidden = true` / `visibilityState = "hidden"` -- which is
+    #    exactly the signal a great many real pages (virtualized lists,
+    #    requestAnimationFrame-driven hydration, lazy loading) use to pause
+    #    rendering entirely. Confirmed empirically: an rAF loop ran at ~0
+    #    frames while genuinely hidden, and at full speed once moved
+    #    off-screen instead. That is why `navigate` could succeed (the shell
+    #    page loads fine) while `snapshot`/`evaluate` on real JS-heavy sites
+    #    came back empty -- the exact tool this is for never got to actually
+    #    render anything.
+    #
+    # A window placed off-screen stays mapped and "visible" as far as GTK and
+    # WebKit are concerned -- `shown` fires normally, `document.hidden` stays
+    # false -- while never appearing anywhere on a real desktop.
     window = webview.create_window(
-        "codelite-browser", "about:blank", width=1280, height=900
+        "codelite-browser",
+        "about:blank",
+        width=1280,
+        height=900,
+        x=_OFFSCREEN_POSITION,
+        y=_OFFSCREEN_POSITION,
     )
     session = BrowserSession(window, screenshot_fn=_screenshot_backend())
 
@@ -374,10 +400,6 @@ def main() -> None:  # pragma: no cover - exercised manually, needs a real displ
         # window. Wait for about:blank to finish so its late loaded event cannot
         # be mistaken for the first requested navigation.
         window.events.loaded.wait(20)
-        try:
-            window.hide()
-        except Exception:  # noqa: BLE001 - a backend without this quirk must not be hidden by it
-            logger.debug("Could not hide the browser window after startup", exc_info=True)
         serve(session)
 
     webview.start(serve_when_loaded, debug=False)
