@@ -42,6 +42,12 @@ DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 DEFAULT_CODEX_CLIENT_VERSION = "0.144.1"
 CODEX_REGISTRY_URL = "https://registry.npmjs.org/@openai/codex/latest"
 
+#: A sibling of the Codex base URL, not a child of it -- banked rate-limit
+#: resets live under the ChatGPT web app's own backend, not under `/codex`.
+#: Undocumented, reverse-engineered from the ChatGPT web client; see
+#: https://github.com/aaamosh/codex-reset.
+DEFAULT_WHAM_BASE_URL = "https://chatgpt.com/backend-api/wham"
+
 # -- Images -------------------------------------------------------------------
 
 DEFAULT_IMAGE_MODEL = "gpt-image-2"
@@ -92,6 +98,7 @@ class ProviderConfig:
     oauth_client_id: str = DEFAULT_OAUTH_CLIENT_ID
     oauth_token_url: str | None = None
     codex_base_url: str = DEFAULT_CODEX_BASE_URL
+    wham_base_url: str = DEFAULT_WHAM_BASE_URL
     codex_client_version: str | None = None
     chat_model: str = DEFAULT_CHAT_MODEL
     image_model: str = DEFAULT_IMAGE_MODEL

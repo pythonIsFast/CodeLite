@@ -164,6 +164,18 @@ class Session:
         upstream = self._transport.send_image_request("/images/edits", prepared.body)
         return ImageResult(status=upstream.status, body=upstream.body)
 
+    # -- banked rate-limit resets --------------------------------------------------
+
+    def list_reset_credits(self) -> list[dict[str, Any]]:
+        """Available banked rate-limit reset credits, newest first as Codex sends them."""
+        if self.use_pollinations_free:
+            return []
+        return self._transport.list_reset_credits()
+
+    def redeem_reset_credit(self, credit_id: str) -> dict[str, Any]:
+        """Spend one banked reset credit now. Raises if the account has none left."""
+        return self._transport.redeem_reset_credit(credit_id)
+
 
 def load_session(config: ProviderConfig | None = None) -> Session:
     """Convenience factory mirroring `load_session()` style entry points."""

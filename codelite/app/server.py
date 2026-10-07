@@ -51,6 +51,7 @@ from ..permission.modes import Mode
 from ..provider.auth import AuthError
 from ..provider.login import ChatGPTLoginManager
 from ..provider.pollinations import POLLINATIONS_MODEL
+from ..provider.transport import UpstreamError
 from ..remote import REMOTE_COOKIE, RemoteError, RemoteManager
 from ..project.context import (
     GLOBAL_MEMORY_PATH,
@@ -352,6 +353,32 @@ def create_app(config: AppConfig | None = None, runtime: Runtime | None = None) 
         fresh install genuinely has none until the first message.
         """
         return jsonify({"usage": rt().plan_usage()})
+
+    @app.get("/api/usage/banked-resets")
+    def banked_resets():
+        """Banked rate-limit reset credits this account has available.
+
+        Undocumented ChatGPT feature (see Session.list_reset_credits), so a
+        failure here is reported, not raised -- this is a nice-to-have
+        indicator, not something that should break the usage view.
+        """
+        try:
+            return jsonify({"credits": rt().session.list_reset_credits()})
+        except UpstreamError as error:
+            return jsonify({"credits": [], "error": str(error)})
+
+    @app.post("/api/usage/banked-resets/<credit_id>/redeem")
+    def redeem_banked_reset(credit_id: str):
+        """Spend one banked reset credit now -- always an explicit user click."""
+        try:
+            result = rt().session.redeem_reset_credit(credit_id)
+        except UpstreamError as error:
+            return jsonify({"error": str(error)}), 502
+        # The redeemed window's usage figure only updates on Codex's side
+        # with the account's next real request -- redemption goes through
+        # `wham`, not `/responses`, so there are no fresh rate-limit headers
+        # to read here. The UI says as much rather than showing a stale ring.
+        return jsonify(result)
 
     # -- importing from the Codex CLI ---------------------------------------------
 

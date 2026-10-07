@@ -277,6 +277,18 @@
           <p class="account-detail" id="update-status"></p>
           <button type="button" class="btn" id="update-button">Check for updates</button>
         </div>
+        <div class="settings-banked-resets" id="banked-resets" hidden>
+          <h3>Banked rate-limit resets</h3>
+          <p class="account-detail">
+            Undocumented ChatGPT feature: an eligible account occasionally
+            gets a credit that clears the weekly limit early. Spend one only
+            if you are about to hit the cap -- it does not refill itself.
+          </p>
+          <p class="account-detail" id="banked-resets-status">Checking…</p>
+          <button type="button" class="btn" id="banked-resets-redeem" hidden>
+            Activate a banked reset
+          </button>
+        </div>
       </section>
       <section class="settings-panel" data-settings-panel="remote" hidden>
         <h3>Remote Control</h3>

@@ -33,6 +33,7 @@ import random
 import time
 import urllib.error
 import urllib.request
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Iterator
@@ -140,14 +141,17 @@ class CodexTransport:
         headers: dict[str, str] | None = None,
         body: bytes | None = None,
         stream: bool = False,
+        base_url: str | None = None,
     ):
         """Issue one authenticated request against the Codex base URL.
 
         Returns an open `urllib` response object when `stream=True` (caller
         must read/close it), otherwise a buffered :class:`UpstreamResponse`.
+        `base_url` overrides the default (`codex_base_url`) for endpoints
+        that live elsewhere under the same ChatGPT backend, e.g. `wham`.
         """
         auth = self._get_auth()
-        url = f"{self._config.codex_base_url.rstrip('/')}/{path.lstrip('/')}"
+        url = f"{(base_url or self._config.codex_base_url).rstrip('/')}/{path.lstrip('/')}"
         merged_headers = self._base_headers(auth)
         merged_headers.update(headers or {})
 
@@ -405,3 +409,63 @@ class CodexTransport:
         )
         assert isinstance(result, UpstreamResponse)
         return result
+
+    # -- banked rate-limit resets --------------------------------------------------
+    #
+    # Undocumented: reverse-engineered from the ChatGPT web client's own
+    # Codex tab, not from any published OpenAI API reference. Eligible
+    # Plus/Pro accounts occasionally get a free "reset credit" that clears
+    # the weekly rate-limit window early, meant for "I'm mid-task and about
+    # to hit the cap" -- not something to spend automatically, since each
+    # account only gets a few and they otherwise expire unused. Code Lite
+    # only ever lists and redeems on an explicit user click.
+
+    def list_reset_credits(self) -> list[dict[str, Any]]:
+        """Available banked rate-limit reset credits for this account."""
+        result = self._raw_request(
+            "/rate-limit-reset-credits",
+            base_url=self._config.wham_base_url,
+        )
+        assert isinstance(result, UpstreamResponse)
+        if result.status >= 400:
+            raise UpstreamError(
+                f"Could not list banked resets: HTTP {result.status}: "
+                f"{result.body.decode('utf-8', errors='replace')}"
+            )
+        try:
+            data = json.loads(result.body)
+        except json.JSONDecodeError as error:
+            raise UpstreamError("Banked-reset listing was not valid JSON.") from error
+        # The exact response shape is reverse-engineered, not documented, so
+        # this tries the plausible container keys rather than committing to
+        # one -- a bare list is accepted too.
+        credits = data
+        if isinstance(data, dict):
+            for key in ("credits", "reset_credits", "items", "data"):
+                if isinstance(data.get(key), list):
+                    credits = data[key]
+                    break
+        return [item for item in (credits or []) if isinstance(item, dict)]
+
+    def redeem_reset_credit(self, credit_id: str) -> dict[str, Any]:
+        """Spend one banked reset credit, clearing its rate-limit window now."""
+        payload = json.dumps(
+            {"credit_id": credit_id, "redeem_request_id": uuid.uuid4().hex}
+        ).encode("utf-8")
+        result = self._raw_request(
+            "/rate-limit-reset-credits/consume",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            body=payload,
+            base_url=self._config.wham_base_url,
+        )
+        assert isinstance(result, UpstreamResponse)
+        if result.status >= 400:
+            raise UpstreamError(
+                f"Could not redeem banked reset: HTTP {result.status}: "
+                f"{result.body.decode('utf-8', errors='replace')}"
+            )
+        try:
+            return json.loads(result.body)
+        except json.JSONDecodeError as error:
+            raise UpstreamError("Banked-reset redemption reply was not valid JSON.") from error

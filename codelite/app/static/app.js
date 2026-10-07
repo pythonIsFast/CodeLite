@@ -89,6 +89,9 @@ const el = {
   settingsAuthOpenLink: $("settings-auth-open-link"),
   settingsAuthCopyLink: $("settings-auth-copy-link"),
   settingsUpdate: $("settings-update"),
+  bankedResets: $("banked-resets"),
+  bankedResetsStatus: $("banked-resets-status"),
+  bankedResetsRedeem: $("banked-resets-redeem"),
   remoteUnsupported: $("remote-unsupported"),
   remoteDownload: $("remote-download"),
   remoteDownloadButton: $("remote-download-button"),
@@ -335,6 +338,55 @@ async function copyRemoteValue(input, label) {
   } catch {
     input.select();
     toast(`Select and copy the ${label.toLowerCase()}.`);
+  }
+}
+
+async function loadBankedResets() {
+  el.bankedResetsRedeem.disabled = true;
+  el.bankedResetsStatus.textContent = "Checking…";
+  try {
+    const data = await get("/api/usage/banked-resets");
+    state.bankedResets = data.credits || [];
+    el.bankedResets.hidden = false;
+    if (data.error) {
+      el.bankedResetsStatus.textContent = "Could not check for banked resets.";
+      el.bankedResetsRedeem.hidden = true;
+      return;
+    }
+    const available = state.bankedResets.filter((c) => c.status === "available");
+    if (!available.length) {
+      el.bankedResetsStatus.textContent = "No banked resets available right now.";
+      el.bankedResetsRedeem.hidden = true;
+      return;
+    }
+    el.bankedResetsStatus.textContent =
+      available.length === 1
+        ? "1 banked reset available."
+        : `${available.length} banked resets available.`;
+    el.bankedResetsRedeem.hidden = false;
+  } catch (error) {
+    // This is an undocumented, best-effort feature -- a failure here (e.g.
+    // an account with no such entitlement) should not look like a real error.
+    el.bankedResets.hidden = true;
+  } finally {
+    el.bankedResetsRedeem.disabled = false;
+  }
+}
+
+async function redeemBankedReset() {
+  const available = (state.bankedResets || []).filter((c) => c.status === "available");
+  if (!available.length) return;
+  el.bankedResetsRedeem.disabled = true;
+  el.bankedResetsRedeem.textContent = "Activating…";
+  try {
+    await post(`/api/usage/banked-resets/${encodeURIComponent(available[0].id)}/redeem`, {});
+    toast("Banked reset activated. The weekly ring updates with your next message.");
+    await loadBankedResets();
+  } catch (error) {
+    toast(error.message, true);
+  } finally {
+    el.bankedResetsRedeem.textContent = "Activate a banked reset";
+    el.bankedResetsRedeem.disabled = false;
   }
 }
 
@@ -2543,6 +2595,7 @@ async function openSettings(tab = "account") {
     loadBehaviour(),
     checkForUpdate(),
     loadRemote(),
+    loadBankedResets(),
   ]).catch((error) => toast(error.message, true));
   el.importStatus.textContent = "";
   selectSettingsTab(tab);
@@ -2568,6 +2621,7 @@ function wireEvents() {
   el.authCopyLink.addEventListener("click", copyAuthLink);
   el.settingsAuthCopyLink.addEventListener("click", copyAuthLink);
   el.updateButton.addEventListener("click", runUpdate);
+  el.bankedResetsRedeem.addEventListener("click", redeemBankedReset);
   el.sidebarUpdate.addEventListener("click", () => openSettings("account"));
   el.remoteDownloadButton.addEventListener("click", downloadRemote);
   el.remoteStart.addEventListener("click", startRemote);
