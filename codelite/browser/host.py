@@ -27,10 +27,13 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
 import sys
 import threading
 import time
 from typing import Any, Callable, Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class BrowserActionError(Exception):
@@ -348,8 +351,21 @@ def _screenshot_backend() -> Callable[[WindowLike], bytes] | None:
 def main() -> None:  # pragma: no cover - exercised manually, needs a real display
     import webview  # local import: only the child process needs this
 
+    # Not `hidden=True` at creation, on purpose: pywebview's GTK backend only
+    # honors `hidden` through a code path that runs before its own GTK main
+    # loop starts, which never happens for this (the process's only, "master")
+    # window -- its `show()` unconditionally schedules a real `show_all` once
+    # the loop is already running. A window that is never actually shown never
+    # fires pywebview's internal "shown" event either, and every window method
+    # (`load_url` included) blocks on exactly that event for up to 20s before
+    # raising `WebViewException("Main window failed to start")` -- which is
+    # what made the browser tool unusable on Linux: every single call to it
+    # hit this. Letting the window actually show once, then hiding it
+    # ourselves right after, gets a real "shown" event out of GTK and keeps
+    # every later call working; it costs one brief on-screen flash at the
+    # first browser-tool use instead of the window never working at all.
     window = webview.create_window(
-        "codelite-browser", "about:blank", hidden=True, width=1280, height=900
+        "codelite-browser", "about:blank", width=1280, height=900
     )
     session = BrowserSession(window, screenshot_fn=_screenshot_backend())
 
@@ -358,6 +374,10 @@ def main() -> None:  # pragma: no cover - exercised manually, needs a real displ
         # window. Wait for about:blank to finish so its late loaded event cannot
         # be mistaken for the first requested navigation.
         window.events.loaded.wait(20)
+        try:
+            window.hide()
+        except Exception:  # noqa: BLE001 - a backend without this quirk must not be hidden by it
+            logger.debug("Could not hide the browser window after startup", exc_info=True)
         serve(session)
 
     webview.start(serve_when_loaded, debug=False)
