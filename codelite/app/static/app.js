@@ -2365,9 +2365,16 @@ function supportsFast(model) {
 
 function supportsFlex(model) {
   if (!model) return false;
-  if (model === "auto") return Object.values(state.capabilities).some((c) => c.flex);
-  const capability = state.capabilities[model];
-  return Boolean(capability && capability.flex);
+  // Unlike Fast, Codex's catalog is known to under-report per-model Flex
+  // support (it omits the flag for gpt-5.5/gpt-5.6 even though Flex is
+  // documented and actually accepted there -- openai/codex#31562). Gating
+  // the button on that flag hid it for everyone. Show it whenever we have
+  // real catalog data at all (not the empty object Pollinations free mode
+  // and an unreachable catalog both report) and let the request-time path
+  // -- which already tolerates an unsupported tier being silently ignored
+  // -- be the real gate.
+  if (model === "auto") return Object.keys(state.capabilities).length > 0;
+  return Object.prototype.hasOwnProperty.call(state.capabilities, model);
 }
 
 /**

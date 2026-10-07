@@ -617,11 +617,16 @@ class AgentRunner:
             return True
 
     def _model_supports_flex(self) -> bool:
-        """Whether the run's model offers the Flex tier, per Codex's catalog."""
-        try:
-            return bool(self._session.model_capabilities(self._run_model).get("flex"))
-        except Exception:  # noqa: BLE001 - a catalog hiccup must not fail a run
-            return True
+        """Whether to ask for the Flex tier.
+
+        Unconditionally true -- Codex's catalog is known to under-report
+        per-model Flex support (it omits the flag for gpt-5.5/gpt-5.6 even
+        though Flex is documented and actually accepted there --
+        openai/codex#31562), so gating the request on it would silently drop
+        an explicit user choice. Same fallback as Fast: an unsupported tier
+        is ignored, not an error, so there is nothing to lose by asking.
+        """
+        return True
 
     def _request_turn(self, items: list[dict[str, Any]]) -> dict[str, Any] | None:
         body = {
