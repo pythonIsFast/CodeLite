@@ -27,11 +27,14 @@ call its methods directly, with the local HTTP proxy in
 
 from __future__ import annotations
 
+import email.utils
 import json
+import random
 import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any, Callable, Iterator
 
 from .auth import EffectiveAuth
@@ -44,6 +47,44 @@ USER_AGENT = "codelite-provider/0.1 (+https://github.com/; provider layer)"
 
 _MODEL_CATALOG_TTL_SECONDS = 5 * 60
 _MODEL_CATALOG_FAILURE_TTL_SECONDS = 60
+
+#: Transient failures worth retrying before giving up and surfacing an error
+#: to the user: rate limiting and server-side hiccups. Anything else (400,
+#: 401, 403, 404, ...) means the request itself was wrong and retrying it
+#: unchanged would just fail the same way again.
+_RETRYABLE_STATUSES = frozenset({429, 500, 502, 503, 504})
+_MAX_RETRIES = 3
+_RETRY_BASE_DELAY_SECONDS = 1.0
+_RETRY_MAX_DELAY_SECONDS = 20.0
+
+
+def _retry_delay(attempt: int, headers: Any = None) -> float:
+    """How long to wait before retry number ``attempt`` (0-indexed).
+
+    Honors the server's own ``Retry-After`` when it sends one -- it knows
+    its own rate-limit window better than a guess would -- falling back to
+    exponential backoff with jitter (so a burst of parallel requests do not
+    all retry in lockstep).
+    """
+    retry_after = None
+    if headers is not None:
+        try:
+            retry_after = headers.get("Retry-After")
+        except AttributeError:
+            retry_after = None
+    if retry_after:
+        try:
+            return max(0.0, float(retry_after))
+        except ValueError:
+            try:
+                parsed = email.utils.parsedate_to_datetime(retry_after)
+            except (TypeError, ValueError):
+                parsed = None
+            if parsed is not None:
+                now = datetime.now(parsed.tzinfo or timezone.utc)
+                return max(0.0, (parsed - now).total_seconds())
+    backoff = min(_RETRY_MAX_DELAY_SECONDS, _RETRY_BASE_DELAY_SECONDS * (2 ** attempt))
+    return backoff * (0.5 + random.random() * 0.5)
 
 
 @dataclass
@@ -304,9 +345,7 @@ class CodexTransport:
         if model_info is not None and model_info.use_responses_lite:
             extra_headers["x-openai-internal-codex-responses-lite"] = "true"
 
-        response = self._raw_request(
-            "/responses", method="POST", headers=extra_headers, body=payload, stream=True
-        )
+        response = self._send_responses_with_retry(extra_headers, payload)
 
         if isinstance(response, urllib.error.HTTPError):
             error_body = response.read()
@@ -320,6 +359,43 @@ class CodexTransport:
             return self._iter_body(response)
 
         return collect_completed_response_from_sse(self._iter_body(response))
+
+    def _send_responses_with_retry(self, headers: dict[str, str], payload: bytes):
+        """Issue the `/responses` POST, retrying transient failures.
+
+        Safe to retry here specifically because nothing has been read from
+        the response yet -- a 429/5xx or a dropped connection means no bytes
+        of this turn's reply exist anywhere, so trying again is exactly
+        equivalent to not having tried yet. Once SSE bytes start flowing
+        (after this returns) a drop is a harder problem and is not retried.
+        """
+        last_network_error: UpstreamError | None = None
+        for attempt in range(_MAX_RETRIES + 1):
+            try:
+                response = self._raw_request(
+                    "/responses", method="POST", headers=headers, body=payload, stream=True
+                )
+            except UpstreamError as error:
+                last_network_error = error
+                if attempt < _MAX_RETRIES:
+                    time.sleep(_retry_delay(attempt))
+                    continue
+                raise
+            if (
+                isinstance(response, urllib.error.HTTPError)
+                and response.code in _RETRYABLE_STATUSES
+                and attempt < _MAX_RETRIES
+            ):
+                delay = _retry_delay(attempt, response.headers)
+                response.read()
+                response.close()
+                time.sleep(delay)
+                continue
+            return response
+        # Unreachable -- the loop above always returns or raises -- but keeps
+        # type-checkers and the "possibly unbound" linter happy.
+        assert last_network_error is not None
+        raise last_network_error
 
     # -- images ------------------------------------------------------------------
 
