@@ -136,11 +136,13 @@ needs no confirmation, the same as `web_fetch`; anything that acts on the page
 write, because it can submit a form or follow a link into a purchase flow
 exactly as a write changes state on disk.
 
-Two things this does not paper over: a packaged/frozen build has no system
-Python to run the child process with, so the tool reports that plainly rather
-than failing strangely; and screenshots are WebKitGTK-specific today (Linux
-only) because pywebview itself exposes no screenshot call -- extending that to
-WebView2 on Windows is unimplemented, not merely untested.
+One thing this does not paper over: screenshots are WebKitGTK-specific today
+(Linux only) because pywebview itself exposes no screenshot call -- extending
+that to WebView2 on Windows is unimplemented, not merely untested. A
+packaged/frozen build has no separate system Python to run the hidden-window
+child process with, but it doesn't need one either: it re-execs its own
+binary with a hidden `--browser-host` flag instead of spawning a Python
+interpreter.
 
 ### Remote Control
 

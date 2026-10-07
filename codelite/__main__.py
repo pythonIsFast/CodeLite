@@ -55,11 +55,26 @@ def _parser() -> argparse.ArgumentParser:
         help="Serve the app without opening a window (open the URL yourself).",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging.")
+    parser.add_argument(
+        "--browser-host",
+        action="store_true",
+        # Not a user-facing flag: codelite.browser.client re-execs the
+        # running binary with this to get a hidden-browser child process in
+        # a packaged build, which has no separate system Python to spawn
+        # instead (see the module docstring there for why).
+        help=argparse.SUPPRESS,
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.browser_host:
+        from .browser.host import main as browser_host_main
+
+        browser_host_main()
+        return 0
+
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",

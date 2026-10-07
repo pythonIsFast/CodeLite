@@ -74,13 +74,11 @@ class BrowserClient:
             # A frozen build's `sys.executable` is the app's own binary, not a
             # general Python interpreter -- there is nothing to hand `-c` to,
             # and no on-disk `codelite` package for a system Python to import
-            # either. Failing clearly here beats a cryptic subprocess crash.
-            raise BrowserError(
-                "The browser tool needs a system Python interpreter to run its "
-                "hidden window as a separate process, which this packaged build "
-                "does not have. It works from a normal checkout or the Linux "
-                "zipapp build."
-            )
+            # either. Re-exec the binary itself instead: `--browser-host` (see
+            # codelite.__main__) makes it run codelite.browser.host.main()
+            # directly rather than the normal app, the same trick Electron
+            # apps use for a worker process with no separate runtime to spawn.
+            return [sys.executable, "--browser-host"]
         root = _import_root()
         bootstrap = (
             f"import sys; sys.path.insert(0, {str(root)!r}); "
