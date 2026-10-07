@@ -348,16 +348,12 @@ def _screenshot_backend() -> Callable[[WindowLike], bytes] | None:
     return _gtk_screenshot
 
 
-#: Far enough off any real display that the window never overlaps a visible
-#: desktop, on any monitor arrangement.
-_OFFSCREEN_POSITION = -10_000
-
-
 def main() -> None:  # pragma: no cover - exercised manually, needs a real display
     import webview  # local import: only the child process needs this
 
-    # Positioned off-screen, not `hidden=True` -- two separate bugs ruled out
-    # by hand (verified under Xvfb + WebKitGTK, not just read in source):
+    # Not `hidden=True`, not off-screen -- a genuinely on-screen 1x1 window
+    # in the corner. Two separate bugs ruled out by hand along the way
+    # (verified under Xvfb + WebKitGTK, not just read in source):
     #
     # 1. pywebview's GTK backend only honors `hidden` through a code path that
     #    runs before its own GTK main loop starts, which never happens for
@@ -376,22 +372,25 @@ def main() -> None:  # pragma: no cover - exercised manually, needs a real displ
     #    exactly the signal a great many real pages (virtualized lists,
     #    requestAnimationFrame-driven hydration, lazy loading) use to pause
     #    rendering entirely. Confirmed empirically: an rAF loop ran at ~0
-    #    frames while genuinely hidden, and at full speed once moved
-    #    off-screen instead. That is why `navigate` could succeed (the shell
-    #    page loads fine) while `snapshot`/`evaluate` on real JS-heavy sites
-    #    came back empty -- the exact tool this is for never got to actually
-    #    render anything.
+    #    frames while genuinely hidden.
     #
-    # A window placed off-screen stays mapped and "visible" as far as GTK and
-    # WebKit are concerned -- `shown` fires normally, `document.hidden` stays
-    # false -- while never appearing anywhere on a real desktop.
+    # 3. Moving the window far off-screen instead (tried next) fixed both of
+    #    the above under every setup this could be tested against -- bare
+    #    Xvfb, Xvfb + a real reparenting WM (metacity), Xvfb + a compositing
+    #    WM (mutter) -- but still came back as bug 1's exact symptom for at
+    #    least one real user, on a GPU/driver combination (hardware-
+    #    accelerated Mesa) this sandbox has no GPU to reproduce. The
+    #    suspicion, unconfirmed: a window placed entirely outside every
+    #    monitor's bounds may never enter a compositor's accelerated-
+    #    compositing/exposure cycle on some driver stacks, which would starve
+    #    the same "shown"/"_pywebviewready" signal bug 1 depends on.
+    #
+    # A 1x1 window at (0, 0) sidesteps that uncertainty entirely: it is
+    # unambiguously a normal, on-screen, mapped window as far as any WM or
+    # GPU driver is concerned -- nothing about off-screen exposure to reason
+    # about -- while being too small to meaningfully notice.
     window = webview.create_window(
-        "codelite-browser",
-        "about:blank",
-        width=1280,
-        height=900,
-        x=_OFFSCREEN_POSITION,
-        y=_OFFSCREEN_POSITION,
+        "codelite-browser", "about:blank", width=1, height=1, x=0, y=0
     )
     session = BrowserSession(window, screenshot_fn=_screenshot_backend())
 
