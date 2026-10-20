@@ -304,6 +304,7 @@ class Store:
             "workspace",
             "reasoning_effort",
             "fast_mode",
+            "flex_mode",
         }
         updates = {key: value for key, value in fields.items() if key in allowed}
         if not updates:

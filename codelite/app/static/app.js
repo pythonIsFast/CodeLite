@@ -1962,7 +1962,14 @@ function connectStream(conversationId) {
         totalTokens: state.active.total_tokens,
       });
     }
-    toast(`Compacted earlier context; kept the latest ${data.kept_items} items.`);
+    // `kept_items` is always 0 -- Compact replaces the model's entire working
+    // history with one summary, by design. Worth saying plainly: the number
+    // alone reads like data loss, but the full transcript above is untouched
+    // and still saved; only what gets resent to the model next turn shrank.
+    toast(
+      `Compacted ${data.compacted_items} earlier message(s) into a summary. ` +
+      `Nothing was deleted -- the full conversation above is still here.`
+    );
   });
   on("compaction_failed", (data) => {
     toast(`Could not compact context: ${data.message}`, true);

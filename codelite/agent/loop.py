@@ -140,11 +140,18 @@ class AgentRunner:
         """Manually compact this conversation without adding a chat message."""
         self._run_tokens_used = 0
         try:
-            if self._maybe_compact_history(force=True) is None:
+            # Checked here, not left to `_maybe_compact_history`'s own empty-
+            # history check: that method also returns None when the request
+            # itself failed (after already publishing "compaction_failed"),
+            # and conflating the two meant a real failure got a second,
+            # contradictory "nothing to compact" toast right on top of it.
+            if not self._store.load_items(self._conversation.id):
                 self._publish(
                     "compaction_skipped",
                     {"message": "There is no earlier history to compact yet."},
                 )
+            else:
+                self._maybe_compact_history(force=True)
         finally:
             self._publish("compaction_finished", {})
 
@@ -394,6 +401,31 @@ class AgentRunner:
             *tail,
         ]
 
+    def _compaction_model(self) -> str:
+        """Which model should summarize this conversation's history.
+
+        `config.compaction_model` is a small, fixed "judge" model
+        (gpt-5.6-luna, 272k) picked for cost on an ordinary conversation --
+        but compaction triggers at 80% of *this run's own* window, which is
+        922k for Astra and 1.05M for Sol. On those, the configured model's
+        own request would already be over ITS limit before compaction ever
+        had a chance to run, failing every single time on exactly the
+        large-context conversations that need it most. Falling back to the
+        run's own model is guaranteed to fit: that history already fits
+        there today, which is the only reason it hasn't failed outright.
+        """
+        configured = self._config.compaction_model
+        if configured == self._run_model:
+            return configured
+        try:
+            window = self._session.context_window(configured)
+        except Exception:  # noqa: BLE001 - an unreachable catalog means "don't trust it"
+            window = None
+        used = self._conversation.context_tokens or 0
+        if window is None or used >= window:
+            return self._run_model
+        return configured
+
     def _maybe_compact_history(self, force: bool = False) -> list[dict[str, Any]] | None:
         """Summarize older history before the input window becomes a hard stop.
 
@@ -420,7 +452,7 @@ class AgentRunner:
         try:
             response = self._session.send_responses(
                 {
-                    "model": self._config.compaction_model,
+                    "model": self._compaction_model(),
                     "instructions": COMPACTION_INSTRUCTIONS,
                     "input": summary_input,
                 },
