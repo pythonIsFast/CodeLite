@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from .. import settings
 from ..permission.manager import PermissionManager
 from ..provider.session import Session
 from ..questions import QuestionManager
@@ -137,12 +138,18 @@ class ToolContext:
         return resolved
 
     def resolve_read(self, raw_path: str) -> Path:
-        """Resolve a workspace path or an exact file attached to this turn."""
+        """Resolve a path the agent may *read*: the workspace, an exact file
+        attached to this turn, or anywhere at all when the user has allowed
+        read-only access outside the workspace. Writes never use this."""
         try:
             return self.resolve(raw_path)
         except PathOutsideWorkspace:
+            if not raw_path or not raw_path.strip():
+                raise
             candidate = Path(raw_path).expanduser().resolve()
             if candidate in self.attachment_paths:
+                return candidate
+            if settings.active("allow_read_outside_workspace"):
                 return candidate
             raise
 

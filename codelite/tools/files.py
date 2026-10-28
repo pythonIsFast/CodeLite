@@ -177,7 +177,7 @@ def _run_edit_file(args: dict[str, Any], ctx: ToolContext) -> str:
 
 
 def _run_list_dir(args: dict[str, Any], ctx: ToolContext) -> str:
-    path = ctx.resolve(args.get("path") or ".")
+    path = ctx.resolve_read(args.get("path") or ".")
     if not path.exists():
         raise ToolError(f"{path} does not exist.")
     if not path.is_dir():

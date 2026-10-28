@@ -160,6 +160,16 @@ SETTINGS: tuple[Setting, ...] = (
         unit="s",
     ),
     Setting(
+        key="allow_read_outside_workspace",
+        label="Let the agent read files outside the workspace",
+        kind="bool",
+        default=False,
+        group="tools",
+        help="Read-only: lets read, list and search reach any path on this computer. "
+        "Writes and edits stay inside the workspace either way. Turn on only if you "
+        "trust the agent with everything your user account can read.",
+    ),
+    Setting(
         key="max_tool_output_chars",
         label="Tool output limit",
         kind="int",

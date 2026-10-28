@@ -83,7 +83,7 @@ def _run_grep(args: dict[str, Any], ctx: ToolContext) -> str:
     except re.error as error:
         raise ToolError(f"`pattern` is not a valid regular expression: {error}") from error
 
-    root = ctx.resolve(args.get("path") or ".")
+    root = ctx.resolve_read(args.get("path") or ".")
     if not root.exists():
         raise ToolError(f"{root} does not exist.")
 
@@ -121,7 +121,7 @@ def _run_find_files(args: dict[str, Any], ctx: ToolContext) -> str:
     if not glob:
         raise ToolError("`glob` is required, e.g. '*.py' or 'test_*'.")
 
-    root = ctx.resolve(args.get("path") or ".")
+    root = ctx.resolve_read(args.get("path") or ".")
     if not root.is_dir():
         raise ToolError(f"{root} is not a directory.")
 
