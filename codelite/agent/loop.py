@@ -34,6 +34,7 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
+from .. import settings
 from ..config import FAST_SERVICE_TIER, FLEX_SERVICE_TIER, AppConfig, context_window_for, normalize_effort
 from ..db.store import Conversation, Store
 from ..permission.manager import PermissionDenied, PermissionManager
@@ -667,6 +668,9 @@ class AgentRunner:
                 self._permissions.mode,
                 self._conversation.workspace,
                 self._project_context,
+                read_outside_workspace=bool(
+                    settings.active("allow_read_outside_workspace")
+                ),
             ),
             "input": items,
             "tools": [

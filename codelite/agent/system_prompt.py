@@ -34,8 +34,8 @@ of guessing at names, signatures or structure.
 style, naming and comment density.
 - Prefer `edit_file` over `write_file` for existing files. Only rewrite a whole \
 file when you really are replacing all of it.
-- Every path you pass to a tool is relative to the workspace root. You cannot \
-reach outside it.
+- Every path you pass to a tool is relative to the workspace root unless it is \
+absolute. {read_scope}
 - When the user asks for a new image asset, use `generate_image` with a precise \
 prompt and a workspace-relative output path. It saves the generated image there.
 - Use `showcase_file` with a workspace-relative path when a file should appear \
@@ -101,9 +101,27 @@ run destructive commands unless the user clearly asked for that.\
 }
 
 
-def build(mode: Mode, workspace: str, project_context: str = "") -> str:
+READ_SCOPE_WORKSPACE_ONLY = (
+    "Read, list and search tools only reach paths inside the workspace."
+)
+READ_SCOPE_ANYWHERE = (
+    "The user has allowed read-only access beyond the workspace: read_file, "
+    "list_dir, grep and find_files accept absolute paths anywhere the user's "
+    "account can read, and you should use them when the task needs such a file. "
+    "Writes and edits still have to stay inside the workspace."
+)
+
+
+def build(
+    mode: Mode,
+    workspace: str,
+    project_context: str = "",
+    read_outside_workspace: bool = False,
+) -> str:
     """Assemble the system prompt for a run in ``mode`` inside ``workspace``."""
-    sections = [BASE_PROMPT, f"Workspace root: {workspace}", MODE_NOTES[mode]]
+    read_scope = READ_SCOPE_ANYWHERE if read_outside_workspace else READ_SCOPE_WORKSPACE_ONLY
+    base = BASE_PROMPT.replace("{read_scope}", read_scope)
+    sections = [base, f"Workspace root: {workspace}", MODE_NOTES[mode]]
     if project_context:
         sections.append(project_context)
     return "\n\n".join(sections)
